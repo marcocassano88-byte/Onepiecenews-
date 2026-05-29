@@ -1,30 +1,54 @@
 import os
 import time
+import hashlib
 from telegram import Bot
+import feedparser
+from deep_translator import GoogleTranslator
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 bot = Bot(token=BOT_TOKEN)
 
-posts = [
-    ("🔥 One Piece: mistero del Secolo Vuoto", "https://onepiece.fandom.com/wiki/Void_Century"),
-    ("🏴‍☠️ Luffy verso il One Piece", "https://onepiece.fandom.com/wiki/Monkey_D._Luffy"),
-    ("⚔️ Zoro spadaccino leggendario", "https://onepiece.fandom.com/wiki/Roronoa_Zoro"),
-    ("👑 Shanks e il Nuovo Mondo", "https://onepiece.fandom.com/wiki/Shanks"),
-    ("🔥 Gear 5 spiegato", "https://onepiece.fandom.com/wiki/Gomu_Gomu_no_Mi/Gear_5")
-]
+RSS_FEED = "https://www.animenewsnetwork.com/all/rss.xml"
 
-for title, link in posts * 10:
+posted = set()
+
+def translate(text):
     try:
-        text = f"{title}\n👉 {link}"
+        return GoogleTranslator(source='auto', target='it').translate(text)
+    except:
+        return text
 
-        bot.send_message(chat_id=CHAT_ID, text=text)
+def make_id(text):
+    return hashlib.md5(text.encode()).hexdigest()
 
-        print("OK:", title)
+while True:
+    feed = feedparser.parse(RSS_FEED)
 
-        time.sleep(40)
+    for entry in feed.entries[:10]:
+        title = entry.title
+        link = entry.link
 
-    except Exception as e:
-        print("Errore:", e)
+        uid = make_id(title)
+
+        if uid in posted:
+            continue
+
+        posted.add(uid)
+
+        title_it = translate(title)
+
+        message = f"🔥 {title_it}\n\n👉 Fonte: {link}"
+
+        try:
+            bot.send_message(chat_id=CHAT_ID, text=message)
+            print("POST:", title_it)
+
+        except Exception as e:
+            print("Errore:", e)
+
         time.sleep(20)
+
+    print("Attendo nuovo ciclo...")
+    time.sleep(300)
