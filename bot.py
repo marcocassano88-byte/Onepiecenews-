@@ -10,12 +10,12 @@ import re
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# 1. LISTA DEI PROFILI ITALIANI (Divisi per le categorie richieste)
+# I nostri 4 account italiani di riferimento
 ACCOUNTS = [
-    "OP_Spoiler_IT",   # Leak & Spoiler capitoli
-    "OnePiece_It",     # Notizie generali brand
-    "BikeAndRaft",     # Teorie e approfondimenti
-    "OPLiveActionIT"   # Notizie sul Live Action Netflix
+    "OP_Spoiler_IT",   
+    "OnePiece_It",     
+    "BikeAndRaft",     
+    "OPLiveActionIT"   
 ]
 
 HISTORY_FILE = "posted_tweets.txt"
@@ -29,9 +29,9 @@ def make_id(text):
 
 def clean_tweet_text(text):
     if not text: return ""
-    text = re.sub(r'https?://nitter\.[^\s]+', '', text)
-    text = re.sub(r'https?://twitter\.[^\s]+', '', text)
-    text = re.sub(r'https?://x\.[^\s]+', '', text)
+    # Pulisce i tag HTML che a volte spuntano nei feed
+    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r'https?://[^\s]+', '', text)
     return text.strip()
 
 async def main():
@@ -41,8 +41,6 @@ async def main():
 
     bot = Bot(token=BOT_TOKEN)
     
-    # IMPORTANTE: Per questo primo avvio di massa NON svuotiamo la cronologia se l'hai già avviato,
-    # ma carichiamo tutto il blocco storico.
     posted_ids = set()
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -50,86 +48,99 @@ async def main():
 
     total_uploaded = 0
 
-    # Giriamo su tutti e 4 gli account italiani
     for account in ACCOUNTS:
-        print(f"\n--- [Fase di Massa] Estrazione da: @{account} ---")
-        rss_feed = f"https://nitter.poast.org/{account}/rss"
+        print(f"\n--- Estrazione stabile da: @{account} ---")
+        
+        # Usiamo RSSHub, il servizio più potente e stabile del web per X
+        rss_feed = f"https://rsshub.app/twitter/user/{account}"
         
         try:
-            response = requests.get(rss_feed, headers=HEADERS, timeout=15)
+            response = requests.get(rss_feed, headers=HEADERS, timeout=20)
             feed = feedparser.parse(response.text)
         except Exception as e:
             print(f"Errore di connessione per {account}: {e}")
             continue
 
         if not feed.entries:
-            print(f"Nessun post trovato per {account} (Nitter potrebbe essere sovraccarico), salto al prossimo...")
+            print(f"Nessun post estratto da rsshub per {account}. Provo un server alternativo...")
+            # Server di riserva se il principale rallenta
+            rss_feed_backup = f"https://moe.io.稳.rsshub.app/twitter/user/{account}"
+            try:
+                response = requests.get(rss_feed_backup, headers=HEADERS, timeout=15)
+                feed = feedparser.parse(response.text)
+            except:
+                continue
+
+        if not feed.entries:
+            print(f"Nessun post disponibile per {account}")
             continue
 
-        # Prendiamo fino a 15 post storici per OGNI account per superare quota 50 post
+        # Prendiamo fino a 15 post storici per iniziare a riempire il canale
         entries_to_process = feed.entries[:15]
-        print(f"Trovati {len(feed.entries)} post. Ne elaboro fino a 15 storici...")
+        print(f"Trovati {len(feed.entries)} post. Ne elaboro fino a 15...")
 
         for entry in entries_to_process:
-            raw_text = entry.get("title", "")
+            raw_text = entry.get("description", entry.get("title", ""))
             tweet_text = clean_tweet_text(raw_text)
             
-            nitter_link = entry.get("link", "")
-            tweet_link = nitter_link.replace("nitter.poast.org", "x.com")
+            tweet_link = f"https://x.com/{account}"
             
-            if not tweet_text:
+            if not tweet_text or len(tweet_text) < 5:
                 continue
                 
             uid = make_id(tweet_text)
             
-            # Evita di duplicare post se fai girare lo script più volte
             if uid in posted_ids:
                 continue
 
-            # Estrazione immagine nativa di X
+            # Cerchiamo l'immagine allegata al post (se presente)
             img_url = None
             if "media_thumbnail" in entry and entry["media_thumbnail"]:
                 img_url = entry["media_thumbnail"][0]["url"]
-            elif "enclosure" in entry:
-                img_url = entry["enclosure"]["url"]
+            
+            # Se non la trova lì, proviamo a cercarla nel testo HTML del feed
+            if not img_url and "description" in entry:
+                img_match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', entry["description"])
+                if img_match:
+                    img_url = img_match.group(1)
 
-            # Formattazione testo (Prima riga in grassetto)
-            lines = tweet_text.split('\n')
+            # Impostiamo il testo in modo leggibile
+            lines = [line.strip() for line in tweet_text.split('\n') if line.strip()]
+            if not lines: continue
+            
             title_line = lines[0]
             remaining_text = "\n".join(lines[1:]) if len(lines) > 1 else ""
             
+            # Tagliamo se è biblico per evitare errori di Telegram
+            if len(remaining_text) > 600:
+                remaining_text = remaining_text[:600] + "..."
+
             message = f"📢 *{title_line}*\n"
             if remaining_text:
                 message += f"\n{remaining_text}\n"
             message += f"\n👉 [Apri su X]({tweet_link})\n\n#{account.lower()} #onepiece #italy"
 
             try:
-                if img_url:
+                if img_url and img_url.startswith("http"):
                     await bot.send_photo(chat_id=CHAT_ID, photo=img_url, caption=message, parse_mode="Markdown")
                 else:
                     await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown", disable_web_page_preview=True)
                 
                 print(f" -> Postato con successo da @{account}")
                 
-                # Salva subito in cronologia
                 with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                     f.write(f"{uid}\n")
                 posted_ids.add(uid)
                 
                 total_uploaded += 1
-                
-                # PAUSA DI SICUREZZA GIGANTE: 6 secondi tra un post e l'altro.
-                # Serve a non far arrabbiare Telegram durante il caricamento di massa!
-                await asyncio.sleep(6)
+                await asyncio.sleep(5) # Antispam
                 
             except Exception as e:
-                print(f" -> Errore d'invio su Telegram: {e}")
-                # Se Telegram ci dice che stiamo andando troppo veloci, si ferma per 30 secondi
+                print(f" -> Errore d'invio: {e}")
                 if "Too Many Requests" in str(e):
-                    print("Attesa forzata anti-spam di 30 secondi...")
-                    await asyncio.sleep(30)
+                    await asyncio.sleep(25)
 
-    print(f"\n[COMPLETATO] Il canale è stato popolato con {total_uploaded} nuovi post storici!")
+    print(f"\n[COMPLETATO] Caricamento di massa terminato! Inviati: {total_uploaded}")
 
 if __name__ == "__main__":
     asyncio.run(main())
