@@ -5,6 +5,8 @@ import random
 import feedparser
 import requests
 from telegram import Bot
+import io
+from PIL import Image
 
 # Configurazione credenziali da variabili d'ambiente GitHub
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -16,16 +18,31 @@ CACHE_DIR = "cache"
 HISTORY_FILE = "posted_urls.txt"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# Carica lo storico dei post già inviati per evitare duplicati su GitHub
+# Carica lo storico dei post già inviati per evitare duplicati
 posted = set()
 if os.path.exists(HISTORY_FILE):
     with open(HISTORY_FILE, "r", encoding="utf-8") as f:
         posted = set(line.strip() for line in f if line.strip())
 
+# === IMMAGINE FAILSAFE (DIFESA DEFINITIVA) ===
+# Se il download fallisce, usiamo questa immagine.
+# È una piccola immagine solida di 1x1 pixel (trasparente o bianca) convertita in base64.
+# Per renderla più visibile, usiamo un'immagine con il logo.
+DEFAULT_IMAGE_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAMAAAC5zwKfAAAAbFBMVEX///8zM/+AgP+fn/9wYP8rG/+Vlf+8vP8XF/+2tv+np/+Dg/8PD/9ERM9ISE+AgI9wcI+rq6/AwP8nJ//AwM93d/+UlM+2tv9PT8+jo//Pz/8vL/+wsL84N+97e+8iIu8PDu97e+8AAAAsiXoYAAAACXBIWXMAAAsTAAALEwEAmpwYAAAByklEQVRYhc2S526DMBBEZ2iG9p4A//+/7u4UqLhB0ZVsXyK1lW7pZpD64T1oR1GUTdM0TdN/j/Xj3h55e71Z5iS28Uaz1u1Hl9x+Y5s8m77Z5mS7S5/H5tn0zXbzfO8v59vW4fN9v5xvW4fP9/1yvm0dPt/3yfm2dfh83yfn29bh832fnG9bh8/3fXK+bR0+3/fJ+bZ1+Hxf4Gvr8Pm+QM63rcPn+z4537YOn+/75HzaOny+75Pzberw+b5Pzre5P8n+Gv7L5tnszXbzfA+bZ9M3283f6pntR7v2L5fcfmObPJu+Wb5U/bM+j82T6Zs14+C36fXYPD/O4fO7/3K+bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+Hxf3L9L8P5dAv8A8/Yp5R+h1wAAAABJRU5ErkJggg=="
+)
+
+import base64
+
+def get_failsafe_image():
+    """Genera un oggetto bytes dell'immagine failsafe."""
+    return base64.b64decode(DEFAULT_IMAGE_BASE64)
+
+# === LOGICA DI RECUPERO IMMAGINI ===
+
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
-# Mappa categorie Wikimedia
 characters_map = {
     "luffy": "Monkey D. Luffy", "zoro": "Roronoa Zoro", "nami": "Nami (One Piece)",
     "usopp": "Usopp", "sanji": "Sanji", "chopper": "Tony Tony Chopper",
@@ -103,6 +120,8 @@ def hashtags(title):
     if "imu" in t: tags.append("#imu")
     return " ".join(tags)
 
+# === FUNZIONE PRINCIPALE ===
+
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
         print("Errore: BOT_TOKEN o CHAT_ID non configurati nelle variabili d'ambiente.")
@@ -121,15 +140,24 @@ async def main():
         if uid in posted:
             continue
 
-        image = get_character_image(title)
+        image_path = get_character_image(title)
         message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
 
         try:
-            if image and os.path.exists(image):
-                with open(image, "rb") as photo_file:
+            # Determinazione dell'immagine da inviare
+            if image_path and os.path.exists(image_path):
+                # Caso 1: L'immagine scaricata esiste, usiamo quella
+                print(f"Utilizzo immagine scaricata: {image_path}")
+                with open(image_path, "rb") as photo_file:
                     await bot.send_photo(chat_id=CHAT_ID, photo=photo_file, caption=message)
             else:
-                await bot.send_message(chat_id=CHAT_ID, text=message)
+                # Caso 2: Download fallito, usiamo l'immagine failsafe incorporata
+                print(f"Attivazione Failsafe Image per: {title}")
+                # Convertiamo l'immagine incorporata in un oggetto di tipo IO per Telegram
+                failsafe_bytes = io.BytesIO(get_failsafe_image())
+                # Per identificare che è l'immagine di sicurezza per Telegram
+                failsafe_bytes.name = "default_failsafe.png"
+                await bot.send_photo(chat_id=CHAT_ID, photo=failsafe_bytes, caption=message)
             
             print(f"Pubblicato con successo: {title}")
             
@@ -143,6 +171,7 @@ async def main():
 
         except Exception as e:
             print(f"Errore durante l'invio di '{title}': {e}")
+            # Se persino l'invio failsafe fallisce, registriamo l'errore
 
     print(f"Task terminato. Nuovi post pubblicati: {new_posts_counter}")
 
