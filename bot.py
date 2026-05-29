@@ -4,17 +4,21 @@ import hashlib
 import feedparser
 import requests
 from telegram import Bot
-import io
+import re
 
-# Configurazione credenziali
+# Configurazione credenziali di GitHub
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
-HISTORY_FILE = "posted_urls.txt"
+# 1. LISTA DEI PROFILI ITALIANI (Divisi per le categorie richieste)
+ACCOUNTS = [
+    "OP_Spoiler_IT",   # Leak & Spoiler capitoli
+    "OnePiece_It",     # Notizie generali brand
+    "BikeAndRaft",     # Teorie e approfondimenti
+    "OPLiveActionIT"   # Notizie sul Live Action Netflix
+]
 
-# Usiamo un'unica immagine HD di One Piece super stabile e hostata su server anime libero
-CANDIDATE_IMAGE = "https://images.everyeye.it/img-notizie/one-piece-remake-wit-studio-cambiera-storia-v1-4-690226.jpg"
+HISTORY_FILE = "posted_tweets.txt"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -23,81 +27,109 @@ HEADERS = {
 def make_id(text):
     return hashlib.md5(text.encode('utf-8', errors='ignore')).hexdigest()
 
-def download_image_as_file(url):
-    """Scarica l'immagine localmente bypassando i blocchi e la trasforma in un file binario."""
-    try:
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        if res.status_code == 200:
-            img_io = io.BytesIO(res.content)
-            img_io.name = "poster.jpg"
-            return img_io
-    except Exception as e:
-        print(f" -> Errore download immagine: {e}")
-    return None
+def clean_tweet_text(text):
+    if not text: return ""
+    text = re.sub(r'https?://nitter\.[^\s]+', '', text)
+    text = re.sub(r'https?://twitter\.[^\s]+', '', text)
+    text = re.sub(r'https?://x\.[^\s]+', '', text)
+    return text.strip()
 
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
-        print("Errore: Credenziali mancanti.")
+        print("CRITICO: Credenziali mancanti nelle Actions!")
         return
 
     bot = Bot(token=BOT_TOKEN)
     
+    # IMPORTANTE: Per questo primo avvio di massa NON svuotiamo la cronologia se l'hai già avviato,
+    # ma carichiamo tutto il blocco storico.
+    posted_ids = set()
     if os.path.exists(HISTORY_FILE):
-        try: os.remove(HISTORY_FILE)
-        except: pass
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            posted_ids = set(line.strip() for line in f)
 
-    try:
-        response = requests.get(RSS_FEED, headers=HEADERS, timeout=15)
-        feed = feedparser.parse(response.text)
-    except Exception as e:
-        print(f"Errore feed: {e}")
-        return
+    total_uploaded = 0
 
-    print(f"Articoli trovati: {len(feed.entries)}")
-    new_posts_counter = 0
-
-    # Scarichiamo l'immagine REALE di One Piece prima di iniziare il ciclo dei post
-    print("Download copertina di One Piece in corso...")
-    photo_file = download_image_as_file(CANDIDATE_IMAGE)
-
-    if not photo_file:
-        print("CRITICO: Impossibile scaricare l'immagine di base. Interrompo.")
-        return
-
-    for i, entry in enumerate(feed.entries[:5]):
-        title = entry.get("title", "Nuova notizia One Piece")
-        google_link = entry.get("link", "")
-        
-        print(f"Elaborazione {i+1}: {title}")
-
-        message = (
-            f"🔥 *{title}*\n\n"
-            f"👉 [CLICCA QUI PER LEGGERE LA NOTIZIA]({google_link})\n\n"
-            f"#onepiece #anime #manga"
-        )
+    # Giriamo su tutti e 4 gli account italiani
+    for account in ACCOUNTS:
+        print(f"\n--- [Fase di Massa] Estrazione da: @{account} ---")
+        rss_feed = f"https://nitter.poast.org/{account}/rss"
         
         try:
-            # Riportiamo il puntatore del file in memoria all'inizio per ogni invio
-            photo_file.seek(0)
-            
-            # Inviamo il FILE FISICO, non il link. Telegram non può rifiutarlo.
-            await bot.send_photo(
-                chat_id=CHAT_ID,
-                photo=photo_file,
-                caption=message,
-                parse_mode="Markdown"
-            )
-            print(" -> Post inviato con successo!")
-            
-            with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{make_id(title)}\n")
-                
-            new_posts_counter += 1
-            await asyncio.sleep(4)
+            response = requests.get(rss_feed, headers=HEADERS, timeout=15)
+            feed = feedparser.parse(response.text)
         except Exception as e:
-            print(f" -> Errore d'invio definitivo: {e}")
+            print(f"Errore di connessione per {account}: {e}")
+            continue
 
-    print(f"Fine. Inviati: {new_posts_counter}")
+        if not feed.entries:
+            print(f"Nessun post trovato per {account} (Nitter potrebbe essere sovraccarico), salto al prossimo...")
+            continue
+
+        # Prendiamo fino a 15 post storici per OGNI account per superare quota 50 post
+        entries_to_process = feed.entries[:15]
+        print(f"Trovati {len(feed.entries)} post. Ne elaboro fino a 15 storici...")
+
+        for entry in entries_to_process:
+            raw_text = entry.get("title", "")
+            tweet_text = clean_tweet_text(raw_text)
+            
+            nitter_link = entry.get("link", "")
+            tweet_link = nitter_link.replace("nitter.poast.org", "x.com")
+            
+            if not tweet_text:
+                continue
+                
+            uid = make_id(tweet_text)
+            
+            # Evita di duplicare post se fai girare lo script più volte
+            if uid in posted_ids:
+                continue
+
+            # Estrazione immagine nativa di X
+            img_url = None
+            if "media_thumbnail" in entry and entry["media_thumbnail"]:
+                img_url = entry["media_thumbnail"][0]["url"]
+            elif "enclosure" in entry:
+                img_url = entry["enclosure"]["url"]
+
+            # Formattazione testo (Prima riga in grassetto)
+            lines = tweet_text.split('\n')
+            title_line = lines[0]
+            remaining_text = "\n".join(lines[1:]) if len(lines) > 1 else ""
+            
+            message = f"📢 *{title_line}*\n"
+            if remaining_text:
+                message += f"\n{remaining_text}\n"
+            message += f"\n👉 [Apri su X]({tweet_link})\n\n#{account.lower()} #onepiece #italy"
+
+            try:
+                if img_url:
+                    await bot.send_photo(chat_id=CHAT_ID, photo=img_url, caption=message, parse_mode="Markdown")
+                else:
+                    await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown", disable_web_page_preview=True)
+                
+                print(f" -> Postato con successo da @{account}")
+                
+                # Salva subito in cronologia
+                with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                    f.write(f"{uid}\n")
+                posted_ids.add(uid)
+                
+                total_uploaded += 1
+                
+                # PAUSA DI SICUREZZA GIGANTE: 6 secondi tra un post e l'altro.
+                # Serve a non far arrabbiare Telegram durante il caricamento di massa!
+                await asyncio.sleep(6)
+                
+            except Exception as e:
+                print(f" -> Errore d'invio su Telegram: {e}")
+                # Se Telegram ci dice che stiamo andando troppo veloci, si ferma per 30 secondi
+                if "Too Many Requests" in str(e):
+                    print("Attesa forzata anti-spam di 30 secondi...")
+                    await asyncio.sleep(30)
+
+    print(f"\n[COMPLETATO] Il canale è stato popolato con {total_uploaded} nuovi post storici!")
 
 if __name__ == "__main__":
     asyncio.run(main())
