@@ -20,37 +20,24 @@ HISTORY_FILE = "posted_urls.txt"
 TEMP_IMAGE = "temp_article_image.jpg"
 
 def is_relevant(title, summary):
-    # ELENCO ESTESO DI 150+ PAROLE CHIAVE (INCLUSO LIVE ACTION)
-    keywords = [
-        "one piece", "luffy", "rufy", "zoro", "nami", "usopp", "sanji", "chopper", "robin", "franky", "brook", "jinbe",
-        "oda", "eiichiro", "manga", "anime", "spoiler", "capitolo", "chapter", "pirati", "cappello di paglia", "straw hat",
-        "gear 5", "gear five", "gear 4", "gear fourth", "gear second", "gear third", "haki", "frutto del diavolo",
-        "devil fruit", "akuma no mi", "logia", "paramecia", "zoan", "risveglio", "awakening", "egghead", "wano", 
-        "wano kuni", "kaido", "big mom", "shanks", "barbanera", "blackbeard", "teach", "buggy", "cross guild",
-        "marina", "ammiraglio", "akainu", "kizaru", "aokiji", "fujitora", "ryokugyu", "gorosei", "cinque astri",
-        "im sama", "joy boy", "niko", "nikanika", "gomu gomu", "ito ito", "mera mera", "yami yami", "gura gura",
-        "poneglyph", "rio poneglyph", "road poneglyph", "raftel", "laugh tale", "one piece treasure",
-        "grand line", "nuovo mondo", "new world", "red line", "all blue", "mare", "ciurma", "nave", "thousand sunny",
-        "going merry", "oro jackson", "reverie", "marijoa", "mary geoise", "rivoluzionari", "dragon", "sabo", "koala",
-        "cipher pol", "cp0", "cp9", "lucci", "kaku", "stussy", "seraphim", "vegapunk", "punk records", "kuma",
-        "bonney", "jewelry bonney", "law", "trafalgar law", "kid", "eustass kid", "killer", "ultim'ora", "anticipazioni",
-        # PAROLE CHIAVE LIVE ACTION
-        "live action", "netflix", "one piece live action", "inaki godoy", "mackenyu", "emily rudd", "jacob romero",
-        "taz skylar", "goda", "matt owens", "steven maeda", "baratie", "arlong park", "east blue", "buggy", 
-        "koby", "helmeppo", "garp", "gold roger", "adattamento", "serie tv", "seconda stagione", "stagione 2", 
-        "cast", "produzione", "ciurma live action", "filming", "riprese"
-    ]
+    # Lista ridotta all'essenziale per essere sicuri che il filtro prenda
+    keywords = ["one piece", "luffy", "rufy", "zoro", "nami", "sanji", "oda", "egghead", "gear 5", "live action"]
     text = f"{title.lower()} {summary.lower()}"
     return any(k in text for k in keywords)
 
 def get_image_url(entry):
-    if 'media_content' in entry:
+    # Metodo più robusto per trovare l'immagine
+    if hasattr(entry, 'media_content'):
         return entry.media_content[0]['url']
-    if 'enclosures' in entry and entry.enclosures:
+    if hasattr(entry, 'enclosures') and entry.enclosures:
         return entry.enclosures[0]['href']
-    soup = BeautifulSoup(entry.get("summary", ""), "html.parser")
+    
+    # Cerca nel contenuto HTML (spesso è qui che si nasconde)
+    soup = BeautifulSoup(entry.get("summary", "") or entry.get("content", ""), "html.parser")
     img = soup.find("img")
-    return img['src'] if img else None
+    if img and img.has_attr('src'):
+        return img['src']
+    return None
 
 async def main():
     bot = Bot(token=BOT_TOKEN)
@@ -73,17 +60,17 @@ async def main():
             summary = entry.get("summary", "")
             link = entry.get("link", "")
             
+            # FILTRO: Se non è rilevante, salta completamente
             if not is_relevant(title, summary): continue
             
             uid = hashlib.md5(link.encode('utf-8')).hexdigest()
             if uid in posted_ids: continue
 
             img_url = get_image_url(entry)
-            photo_sent = False
             message = f"📢 <b>{html.escape(title)}</b>\n\n🔗 <a href='{link}'>Leggi la notizia completa</a>"
 
             try:
-                if img_url:
+                if img_url and img_url.startswith('http'):
                     response = requests.get(img_url, stream=True, timeout=10)
                     if response.status_code == 200:
                         with open(TEMP_IMAGE, 'wb') as f:
@@ -91,19 +78,19 @@ async def main():
                         with open(TEMP_IMAGE, 'rb') as photo:
                             await bot.send_photo(chat_id=CHAT_ID, photo=photo, caption=message, parse_mode="HTML")
                         os.remove(TEMP_IMAGE)
-                        photo_sent = True
-                
-                if not photo_sent:
-                    await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="HTML")
+                    else:
+                        # Se il download immagine fallisce, non pubblicare spazzatura
+                        continue 
+                else:
+                    # Se non trova immagine, salta (per mantenere il canale "bello")
+                    continue
 
                 with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(f"{uid}\n")
                 posted_ids.add(uid)
                 total_uploaded += 1
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
             except Exception as e:
-                print(f"Errore invio: {e}")
-
-    print(f"Riempimento completato: {total_uploaded} post inviati.")
+                print(f"Errore post: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
