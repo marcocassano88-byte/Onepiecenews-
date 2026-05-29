@@ -3,7 +3,7 @@ name: One Piece Auto Poster
 on:
   schedule:
     - cron: '0 * * * *' # Gira automaticamente ogni ora
-  workflow_dispatch: # Ti permette di avviarlo anche a mano premendo un tasto su GitHub
+  workflow_dispatch: # Ti permette di avviarlo a mano premendo il tasto su GitHub
 
 jobs:
   run-bot:
@@ -32,6 +32,7 @@ jobs:
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
+        touch posted_urls.txt
         git add posted_urls.txt
         git commit -m "Aggiornato storico post inviati [skip ci]" || exit 0
         git push
