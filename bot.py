@@ -5,11 +5,11 @@ import feedparser
 import requests
 from telegram import Bot
 
+# Configurazione credenziali
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# Nuovo feed italiano stabile e senza blocchi anti-bot
-RSS_FEED = "https://www.animeclick.it/rss/anime"
+RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
 HEADERS = {
@@ -26,64 +26,55 @@ async def main():
 
     bot = Bot(token=BOT_TOKEN)
     
-    posted = set()
+    # Sblocca lo storico per inviare subito i nuovi post corretti
     if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            posted = set(line.strip() for line in f if line.strip())
+        try: os.remove(HISTORY_FILE)
+        except: pass
 
-    print("Scaricamento feed AnimeClick...")
     try:
         response = requests.get(RSS_FEED, headers=HEADERS, timeout=15)
         feed = feedparser.parse(response.text)
     except Exception as e:
-        print(f"Errore download feed: {e}")
+        print(f"Errore feed: {e}")
         return
 
-    if not feed.entries:
-        print("Impossibile leggere il feed.")
-        return
-
-    print(f"Trovati {len(feed.entries)} articoli generali.")
+    print(f"Articoli trovati: {len(feed.entries)}")
     new_posts_counter = 0
 
-    for entry in feed.entries:
-        title = entry.get("title", "")
-        link = entry.get("link", "")
+    for i, entry in enumerate(feed.entries[:5]):
+        title = entry.get("title", "Nuova notizia One Piece")
+        link = entry.get("link", "https://news.google.com")
         
-        # Filtro stringente: pubblichiamo solo se si parla di One Piece
-        if "one piece" not in title.lower():
-            continue
-            
-        uid = make_id(title)
+        print(f"Elaborazione {i+1}: {title}")
+        
+        # Estraiamo la foto originale dell'articolo dal feed (se presente)
+        img_url = None
+        if "media_thumbnail" in entry and entry["media_thumbnail"]:
+            img_url = entry["media_thumbnail"][0]["url"]
+        elif "enclosure" in entry:
+            img_url = entry["enclosure"]["url"]
 
-        if uid in posted:
-            continue
-
-        print(f"Trovata nuova notizia: {title}")
-        message = f"🔥 *{title}*\n\n👉 *Leggi i dettagli su AnimeClick:*\n{link}\n\n#onepiece #anime #manga"
+        message = f"🔥 *{title}*\n\n👉 *Leggi la notizia completa qui:* {link}\n\n#onepiece #anime #manga"
         
         try:
-            await bot.send_message(
-                chat_id=CHAT_ID, 
-                text=message, 
-                parse_mode="Markdown",
-                disable_web_page_preview=False
-            )
-            print(" -> Inviato!")
+            if img_url:
+                # Se c'è la foto originale dell'articolo, usa quella
+                await bot.send_photo(chat_id=CHAT_ID, photo=img_url, caption=message, parse_mode="Markdown")
+                print(" -> Inviato con foto originale!")
+            else:
+                # Se non c'è la foto, manda un messaggio di testo normale (ci penserà l'anteprima di Telegram a mettere la foto del sito)
+                await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown", disable_web_page_preview=False)
+                print(" -> Inviato come testo (Anteprima Link Attiva)!")
             
             with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{uid}\n")
+                f.write(f"{make_id(title)}\n")
                 
             new_posts_counter += 1
-            await asyncio.sleep(5)
-            
-            if new_posts_counter >= 3: # Limite di sicurezza per run
-                break
-                
+            await asyncio.sleep(4)
         except Exception as e:
             print(f" -> Errore d'invio: {e}")
 
-    print(f"Fine. Nuovi post pubblicati: {new_posts_counter}")
+    print(f"Fine. Inviati con successo: {new_posts_counter}")
 
 if __name__ == "__main__":
     asyncio.run(main())
