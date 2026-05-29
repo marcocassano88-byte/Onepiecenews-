@@ -5,6 +5,7 @@ import feedparser
 import requests
 from telegram import Bot
 import io
+import re
 from PIL import Image, ImageDraw
 
 # Configurazione credenziali
@@ -22,98 +23,94 @@ HEADERS = {
 def make_id(text):
     return hashlib.md5(text.encode('utf-8', errors='ignore')).hexdigest()
 
-def create_solid_image(category_color):
-    """Genera un'immagine nativa colorata direttamente in memoria senza usare link esterni."""
-    # Crea un rettangolo moderno 16:9 (800x450) con il colore della categoria
-    img = Image.new("RGB", (800, 450), color=category_color)
+def create_anime_banner(theme):
+    """Genera una copertina geometrica a contrasto senza l'uso di font."""
+    # Sfondo scuro principale (1024x576)
+    img = Image.new("RGB", (1024, 576), color="#1A1A24")
     d = ImageDraw.Draw(img)
     
-    # Aggiunge un bordo interno elegante stile poster
-    d.rectangle([(20, 20), (780, 430)], outline="#FFFFFF", width=3)
+    # Colori del tema
+    primary = theme["primary"]
+    accent = theme["accent"]
     
-    # Salva il file in un flusso di byte in memoria
+    # Pannello laterale colorato dinamico (Stile interfaccia anime)
+    d.rectangle([(0, 0), (300, 576)], fill=primary)
+    
+    # Linee geometriche di accento
+    d.rectangle([(280, 0), (300, 576)], fill=accent)
+    d.polygon([(300, 0), (450, 0), (300, 576)], fill=primary)
+    d.polygon([(300, 576), (450, 576), (300, 0)], fill=accent)
+    
+    # Cornice interna elegante per il testo
+    d.rectangle([(40, 40), (984, 536)], outline="#FFFFFF", width=3)
+    
+    # Salva in memoria RAM
     img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='JPEG')
+    img.save(img_byte_arr, format='JPEG', quality=95)
     img_byte_arr.seek(0)
     return img_byte_arr
 
-def get_color_by_title(title):
-    """Assegna un colore di sfondo unico in base all'argomento della notizia."""
+def get_theme_by_title(title):
     t = title.lower()
+    # Mappatura dei colori basata sui personaggi/temi di One Piece
     if "netflix" in t or "remake" in t or "wit" in t:
-        return "#E50914"  # Rosso Netflix
+        return {"primary": "#E50914", "accent": "#FFFFFF"}  # Rosso Netflix
     elif "milano" in t or "store" in t or "pop-up" in t:
-        return "#FF9F43"  # Arancione Eventi / Milano
+        return {"primary": "#E67E22", "accent": "#F1C40F"}  # Arancio/Oro Milano
     elif "luffy" in t or "rufy" in t or "gear" in t:
-        return "#EE5253"  # Rosso Luffy
+        return {"primary": "#8E44AD", "accent": "#6C5CE7"}  # Viola Gear 5 / Nika
     elif "zoro" in t:
-        return "#10AC84"  # Verde Zoro
+        return {"primary": "#16A085", "accent": "#2ECC71"}  # Verde Zoro
     elif "sanji" in t:
-        return "#2E86DE"  # Blu Sanji
+        return {"primary": "#2980B9", "accent": "#3498DB"}  # Blu Sanji
     
-    return "#222f3e"  # Blu Notte scuro generico per le altre notizie
+    return {"primary": "#2C3E50", "accent": "#BDC3C7"}  # Grigio pirata di default
 
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
-        print("CRITICO: Credenziali BOT_TOKEN o CHAT_ID mancanti!")
+        print("Errore: Credenziali mancanti!")
         return
 
-    print("Avvio il Bot Telegram...")
     bot = Bot(token=BOT_TOKEN)
     
-    print(f"Scaricamento feed...")
+    # Svuota lo storico per questo run specifico, così invia subito i post aggiornati
+    if os.path.exists(HISTORY_FILE):
+        try: os.remove(HISTORY_FILE)
+        except: pass
+
     try:
         response = requests.get(RSS_FEED, headers=HEADERS, timeout=15)
         feed = feedparser.parse(response.text)
     except Exception as e:
-        print(f"ERRORE durante lo scaricamento del feed: {e}")
-        return
-    
-    if not feed.entries:
-        print("ATTENZIONE: Il feed è vuoto.")
+        print(f"Errore caricamento feed: {e}")
         return
 
-    print(f"Articoli totali trovati nel feed: {len(feed.entries)}")
+    print(f"Articoli trovati: {len(feed.entries)}")
     new_posts_counter = 0
 
-    for i, entry in enumerate(feed.entries[:10]):
-        print(f"\n--- Elaborazione articolo {i+1} ---")
-        
+    for i, entry in enumerate(feed.entries[:5]):
         title = entry.get("title", "Nuova notizia One Piece")
         link = entry.get("link", "https://news.google.com")
         
-        print(f"Titolo: {title}")
-        uid = make_id(title)
+        print(f"Elaborazione post {i+1}: {title}")
+        
+        # Genera il banner geometrico personalizzato (No Font = Zero errori)
+        theme = get_theme_by_title(title)
+        image_stream = create_anime_banner(theme)
+        image_stream.name = "one_piece_news.jpg"
 
-        # === FORZATURA RESET ATTIVA (Invia tutto subito per sbloccare il canale) ===
-        # if os.path.exists(HISTORY_FILE):
-        #     with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-        #         if uid in f.read():
-        #             print("Articolo già presente nello storico. Salto.")
-        #             continue
-
-        print("Generazione immagine nativa...")
-        color = get_color_by_title(title)
-        image_stream = create_solid_image(color)
-        image_stream.name = "news_image.jpg"
-
-        print("Invio in corso a Telegram...")
-        message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n#onepiece #anime #manga"
+        # Il titolo viene formattato in grassetto direttamente nella didascalia di Telegram
+        message = f"🔥 *{title}*\n\n👉 *Leggi la notizia completa qui:* {link}\n\n#onepiece #anime #manga"
         
         try:
-            # Inviamo l'immagine come file di byte puro, Telegram non può rifiutarlo
-            await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message)
-            print(" -> SUCCESSO: Post inviato!")
-            
-            with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{uid}\n")
-                
+            await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message, parse_mode="Markdown")
+            print(" -> Inviato!")
             new_posts_counter += 1
             await asyncio.sleep(4)
         except Exception as e:
-            print(f" -> ERRORE Telegram: {e}")
+            print(f" -> Errore d'invio: {e}")
 
-    print(f"\nSessione conclusa. Post inviati: {new_posts_counter}")
+    print(f"Fine. Inviati: {new_posts_counter}")
 
 if __name__ == "__main__":
     asyncio.run(main())
