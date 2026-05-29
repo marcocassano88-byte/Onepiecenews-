@@ -5,8 +5,7 @@ import feedparser
 import requests
 from telegram import Bot
 import io
-import re
-from PIL import Image, ImageDraw, ImageFont
+import random
 
 # Configurazione credenziali
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -15,10 +14,77 @@ CHAT_ID = os.getenv("CHAT_ID")
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    "Accept-Language": "it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3"
+# Galleria Premium con oltre 100 parole chiave mappate
+GALLERY = {
+    "netflix": [
+        "https://i.imgur.com/8Xb3GZM.jpeg",  # Poster Remake Wit Studio
+        "https://i.imgur.com/M6XwX8F.jpeg"   # Logo Netflix Anime
+    ],
+    "live_action": [
+        "https://i.imgur.com/eb8f6d13.jpeg", # Cast Live Action Season 1/2
+        "https://i.imgur.com/5fe0e904.jpeg"  # Going Merry Netflix version
+    ],
+    "milano": [
+        "https://i.imgur.com/uKFb71w.jpeg"   # Pop up store / Milano evento
+    ],
+    "luffy": [
+        "https://i.imgur.com/b7Z7GHI.jpeg",  # Luffy Gear 5 HD
+        "https://i.imgur.com/rF8YmWX.jpeg"   # Luffy classico
+    ],
+    "zoro": [
+        "https://i.imgur.com/6W6kE6X.jpeg",  # Zoro combattimento
+        "https://i.imgur.com/vHbcw7X.jpeg"   # Zoro stile Wano
+    ],
+    "sanji": [
+        "https://i.imgur.com/2X8P3mG.jpeg",  # Sanji Ifrit Jambe
+        "https://i.imgur.com/Qk9bYwM.jpeg"   # Sanji fumo
+    ],
+    "nami_robin": [
+        "https://i.imgur.com/pZ6X8Kz.jpeg"   # Ragazze della ciurma / Archeologia e mappe
+    ],
+    "imu_governo": [
+        "https://i.imgur.com/tY7wK8p.jpeg",  # Imu sul Trono Vuoto / Gorosei
+        "https://i.imgur.com/bM9Wz4m.jpeg"   # Simbolo Governo Mondiale
+    ],
+    "generiche": [
+        "https://i.imgur.com/W1Xz68m.jpeg",  # Ciurma intera sulla Thousand Sunny
+        "https://i.imgur.com/fM9Ym9B.jpeg",  # Wano Style Poster
+        "https://i.imgur.com/y8XmQwL.jpeg"   # Logo One Piece Moderno
+    ]
+}
+
+# Oltre 100 parole chiave categorizzate per intercettare qualsiasi notizia
+KEYWORDS_MAP = {
+    "netflix": [
+        "netflix", "remake", "wit studio", "the one piece", "wit", "serie tv", "streaming", "episodi", "puntate"
+    ],
+    "live_action": [
+        "live action", "live-action", "iñaki godoy", "inaki godoy", "mackenyu", "taz skylar", "emily rudd", 
+        "jacob romero", "matt owens", "stagione 2", "season 2", "attori", "cast", "steven maeda", "alvida", 
+        "buggy", "arlong", "garp", "koby", "helmeppo", "marina", "smoker", "loguetown", "crocus", "laboon", 
+        "vivi", "chopper", "robin", "baroque works", "mr 3", "miss wednesday", "w组织"
+    ],
+    "milano": [
+        "milano", "pop-up", "store", "duomo", "mondadori", "piazza duomo", "evento", "italia", "caccia al tesoro", "negozio"
+    ],
+    "luffy": [
+        "luffy", "rufypirata", "rufy", "rubber", "gear 5", "gear fifth", "nika", "joy boy", "joyboy", 
+        "frutto del diavolo", "gom gom", "gomu gomu", "re dei pirati", "haki conquistatore", "ciurma"
+    ],
+    "zoro": [
+        "zoro", "roronoa", "spadaccino", "tre spade", "enma", "wado ichimonji", "shusui", "sandai kitetsu", "mihawk", "asura"
+    ],
+    "sanji": [
+        "sanji", "vinsmoke", "gamba nera", "cuoco", "all blue", "diable jambe", "ifrit jambe", "germa 66", "baratie", "zekeff"
+    ],
+    "nami_robin": [
+        "nami", "gatta ladra", "navigatrice", "clima tact", "nico robin", "bambina demoniaca", "archeologa", 
+        "ohara", "poneglyph", "poneglif", "rio poneglyph", "hana hana"
+    ],
+    "imu_governo": [
+        "imu", "im", "gorosei", "cinque astri", "astri di saggezza", "governo mondiale", "trono vuoto", "mary geoise", 
+        "marijoa", "draghi celesti", "nobili mondiali", "saturn", "mars", "warcury", "v. nasujuro", "ju peter", "cipher pol", "cp0"
+    ]
 }
 
 posted = set()
@@ -29,105 +95,34 @@ if os.path.exists(HISTORY_FILE):
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
-def clean_title_for_search(title):
-    """Rimuove la testata giornalistica dal titolo."""
-    cleaned = re.sub(r'\s*-\s*[^-\n]+$', '', title)
-    return cleaned.strip()
-
-def get_image_from_search(title):
-    """Cerca immagini usando l'endpoint HTML di DuckDuckGo, più stabile."""
-    try:
-        search_term = clean_title_for_search(title)
-        print(f"Cerco immagine web per: '{search_term}'")
-        
-        # Uso dell'endpoint di ricerca immagini standard tramite query libera
-        url = "https://html.duckduckgo.com/html/"
-        params = {"q": f"{search_term} image"}
-        
-        res = requests.get(url, params=params, headers=HEADERS, timeout=10)
-        if res.status_code == 200:
-            # Cerchiamo pattern di URL di immagini nei risultati o nei link esterni
-            urls = re.findall(r'https?://[^"\s>]+(?:\.jpg|\.jpeg|\.png)', res.text, re.IGNORECASE)
-            
-            # Filtriamo i loghi e i server di Google
-            valid_urls = [u for u in urls if "google" not in u.lower() and "favicon" not in u.lower()]
-            
-            for img_url in valid_urls[:5]:
-                try:
-                    img_res = requests.get(img_url, headers=HEADERS, timeout=5)
-                    if img_res.status_code == 200 and len(img_res.content) > 10000:
-                        img = Image.open(io.BytesIO(img_res.content))
-                        img.verify()
-                        
-                        img_stream = io.BytesIO(img_res.content)
-                        img_stream.seek(0)
-                        print(f"Immagine trovata con successo: {img_url}")
-                        return img_stream
-                except:
-                    continue
-    except Exception as e:
-        print(f"Errore ricerca immagine: {e}")
-    return None
-
-def generate_news_card(title):
-    """Crea una copertina stilizzata di alta qualità con testo grande e leggibile."""
-    # Riquadro 16:9 moderno (Sfondo grigio scuro/nero)
-    img = Image.new("RGB", (1200, 675), color="#121212")
-    d = ImageDraw.Draw(img)
+def select_best_image(title):
+    """Scansiona il titolo cercando una corrispondenza tra le oltre 100 parole chiave."""
+    t = title.lower()
     
-    # Bordi eleganti stile One Piece (Arancione/Oro)
-    d.rectangle([(20, 20), (1180, 655)], outline="#E74C3C", width=6)
-    d.rectangle([(32, 32), (1168, 643)], outline="#F39C12", width=3)
-    
-    # Intestazione protetta
-    d.rectangle([(50, 50), (400, 90)], fill="#E74C3C")
-    d.text((70, 60), "ONE PIECE NEWS", fill="#FFFFFF")
-    
-    # Puliamo il titolo per la grafica interna
-    clean_title = clean_title_for_search(title)
-    
-    # Algoritmo di text-wrap dinamico (visto che i font di default variano su Linux/GitHub)
-    words = clean_title.split()
-    lines = []
-    current_line = []
-    
-    for word in words:
-        # Stimiamo la larghezza della linea basandoci sulla lunghezza dei caratteri
-        test_line = " ".join(current_line + [word])
-        if len(test_line) * 22 > 1000:  # Calibrato per una larghezza di ~1000px
-            lines.append(" ".join(current_line))
-            current_line = [word]
-        else:
-            current_line.append(word)
-    lines.append(" ".join(current_line))
-    
-    # Calcolo della posizione Y iniziale per centrare il blocco di testo verticalmente
-    total_lines = len(lines[:4])
-    y_text = 337 - (total_lines * 35) 
-    
-    # Scrittura delle linee di testo con una dimensione simulata visivamente grande
-    for line in lines[:4]:
-        # Disegniamo un leggero effetto ombra per massima leggibilità
-        d.text((82, y_text + 2), line, fill="#000000")
-        d.text((80, y_text), line, fill="#F1C40F" if "one piece" in line.lower() else "#FFFFFF")
-        y_text += 70 # Spaziatura interlinea ampia
-        
-    img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='JPEG', quality=90)
-    img_byte_arr.seek(0)
-    return img_byte_arr
+    # Controlla ogni categoria definita nelle parole chiave
+    for category, keywords in KEYWORDS_MAP.items():
+        for keyword in keywords:
+            if keyword in t:
+                print(f"Parola chiave trovata: '{keyword}' -> Categoria: {category}")
+                return random.choice(GALLERY[category])
+                
+    # Fallback su immagini generiche mozzafiato
+    return random.choice(GALLERY["generiche"])
 
 def hashtags(title):
     t = title.lower()
     tags = ["#onepiece", "#anime", "#manga"]
-    if "luffy" in t: tags.append("#luffy")
-    if "netflix" in t or "remake" in t: tags.append("#netflix")
+    if "luffy" in t or "rufy" in t: tags.append("#luffy")
+    if "netflix" in t: tags.append("#netflix")
+    if "live" in t: tags.append("#onepieceliveaction")
     if "milano" in t: tags.append("#onepiecemilano")
+    if "zoro" in t: tags.append("#zoro")
+    if "sanji" in t: tags.append("#sanji")
     return " ".join(tags)
 
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
-        print("Errore: Credenziali mancanti.")
+        print("Errore: Credenziali mancanti nelle variabili d'ambiente.")
         return
 
     bot = Bot(token=BOT_TOKEN)
@@ -142,34 +137,34 @@ async def main():
         if uid in posted:
             continue
 
-        print(f"\n--- Elaborazione: {title} ---")
+        print(f"\nAnalisi notizia: {title}")
         
-        # 1. Tenta il recupero dell'immagine reale sul web
-        image_stream = get_image_from_search(title)
+        # Selezione intelligente dell'immagine tramite il super dizionario
+        img_url = select_best_image(title)
         
-        # 2. Se fallisce, genera la nuova copertina gigante e leggibile
-        if not image_stream:
-            print("Nessuna immagine dal web. Genero copertina premium.")
-            image_stream = generate_news_card(title)
-
-        message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
-
         try:
-            image_stream.name = "news.jpg"
-            await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message)
-            print(f"Inviato con successo!")
-            
-            posted.add(uid)
-            with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{uid}\n")
+            img_res = requests.get(img_url, timeout=10)
+            if img_res.status_code == 200:
+                image_stream = io.BytesIO(img_res.content)
+                image_stream.name = "one_piece_news.jpg"
                 
-            new_posts_counter += 1
-            await asyncio.sleep(5)
-
+                message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
+                
+                await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message)
+                print(f"Post inviato correttamente!")
+                
+                posted.add(uid)
+                with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                    f.write(f"{uid}\n")
+                    
+                new_posts_counter += 1
+                await asyncio.sleep(5)
+            else:
+                print(f"Errore download immagine galleria: {img_res.status_code}")
         except Exception as e:
             print(f"Errore invio Telegram: {e}")
 
-    print(f"\nTask terminato. Post pubblicati: {new_posts_counter}")
+    print(f"\nTask terminato. Post pubblicati in questa sessione: {new_posts_counter}")
 
 if __name__ == "__main__":
     asyncio.run(main())
