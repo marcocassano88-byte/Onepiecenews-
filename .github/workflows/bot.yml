@@ -2,37 +2,38 @@ name: One Piece Auto Poster
 
 on:
   schedule:
-    - cron: '0 * * * *' # Gira automaticamente ogni ora
-  workflow_dispatch: # Ti permette di avviarlo a mano premendo il tasto su GitHub
+    # Gira ogni ora (puoi cambiare la frequenza se vuoi)
+    - cron: '0 * * * *'
+  workflow_dispatch: # Ti permette di avviarlo a mano con il tasto "Run workflow"
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Configura Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: Configura Python
+        uses: actions/setup-python@v5
+        with:
+          python-python: '3.10'
 
-    - name: Installa dipendenze
-      run: |
-        pip install python-telegram-bot feedparser requests pillow
+      - name: Installa dipendenze
+        run: |
+          pip install --upgrade pip
+          pip install python-telegram-bot==20.8 feedparser==6.0.11 beautifulsoup4==4.12.3 requests
 
-    - name: Esegui lo Script Bot
-      env:
-        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-        CHAT_ID: ${{ secrets.CHAT_ID }}
-      run: python bot.py
+      - name: Esegui lo Script Bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python bot.py
 
-    - name: Salva lo storico dei post (Evita duplicati al prossimo avvio)
-      run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        touch posted_urls.txt
-        git add posted_urls.txt
-        git commit -m "Aggiornato storico post inviati [skip ci]" || exit 0
-        git push
+      - name: Salva lo storico dei post (Evita duplicati al prossimo avvio)
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add posted_urls.txt || true
+          git commit -m "Aggiornato storico post [skip ci]" || true
+          git push || true
