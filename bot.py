@@ -2,10 +2,7 @@ import os
 import asyncio
 import hashlib
 import feedparser
-import requests
 from telegram import Bot
-import io
-import random
 
 # Configurazione credenziali
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -14,41 +11,34 @@ CHAT_ID = os.getenv("CHAT_ID")
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
-# Galleria Premium con oltre 100 parole chiave mappate (Tutti link testati e funzionanti)
+# Nuova galleria con link istituzionali e stabili (Niente più blocchi IP)
 GALLERY = {
     "netflix": [
-        "https://i.imgur.com/8Xb3GZM.jpeg",  # Poster Remake Wit Studio
-        "https://i.imgur.com/M6XwX8F.jpeg"   # Logo Netflix Anime
+        "https://upload.wikimedia.org/wikipedia/commons/f/f4/Netflix_-_logo.svg" # Logo Netflix ufficiale
     ],
     "live_action": [
-        "https://i.imgur.com/W1Xz68m.jpeg",  # Cast Live Action
-        "https://i.imgur.com/y8XmQwL.jpeg"   # Logo One Piece
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/One_Piece_Wall_Sign_at_the_Mugiwara_Store_in_Shibuya.jpg/1200px-One_Piece_Wall_Sign_at_the_Mugiwara_Store_in_Shibuya.jpg"
     ],
     "milano": [
-        "https://i.imgur.com/uKFb71w.jpeg"   # Pop up store / Milano evento
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/Milano_-_Piazza_Duomo.jpg/1200px-Milano_-_Piazza_Duomo.jpg" # Duomo di Milano
     ],
     "luffy": [
-        "https://i.imgur.com/b7Z7GHI.jpeg",  # Luffy Gear 5 HD
-        "https://i.imgur.com/rF8YmWX.jpeg"   # Luffy classico
+        "https://upload.wikimedia.org/wikipedia/it/b/b7/Monkey_D._Rufy.png" # Rufy Wikipedia Italia
     ],
     "zoro": [
-        "https://i.imgur.com/6W6kE6X.jpeg",  # Zoro combattimento
-        "https://i.imgur.com/W1Xz68m.jpeg"   # Sfondo Ciurma
+        "https://upload.wikimedia.org/wikipedia/it/2/23/Roronoa_Zoro.png" # Zoro Wikipedia Italia
     ],
     "sanji": [
-        "https://i.imgur.com/2X8P3mG.jpeg",  # Sanji Ifrit Jambe
-        "https://i.imgur.com/y8XmQwL.jpeg"   # Logo
+        "https://upload.wikimedia.org/wikipedia/it/e/e0/Sanji.png" # Sanji Wikipedia Italia
     ],
     "nami_robin": [
-        "https://i.imgur.com/8Xb3GZM.jpeg"   # Poster
+        "https://upload.wikimedia.org/wikipedia/it/7/77/Nami_%28One_Piece%29.png" # Nami Wikipedia
     ],
     "imu_governo": [
-        "https://i.imgur.com/uKFb71w.jpeg"   # Alternativa stabile
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Jolly_Roger_of_the_World_Government_%28One_Piece%29.svg/1200px-Jolly_Roger_of_the_World_Government_%28One_Piece%29.svg.png" # Bandiera Governo Mondiale
     ],
     "generiche": [
-        "https://i.imgur.com/W1Xz68m.jpeg",  # Ciurma intera sulla Thousand Sunny
-        "https://i.imgur.com/fM9Ym9B.jpeg",  # Wano Style Poster
-        "https://i.imgur.com/y8XmQwL.jpeg"   # Logo One Piece Moderno
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Jolly_Roger_Straw_Hat_Pirates.svg/1200px-Jolly_Roger_Straw_Hat_Pirates.svg.png" # Jolly Roger Ciurma
     ]
 }
 
@@ -76,8 +66,8 @@ def select_best_image(title):
     for category, keywords in KEYWORDS_MAP.items():
         for keyword in keywords:
             if keyword in t:
-                return random.choice(GALLERY[category])
-    return random.choice(GALLERY["generiche"])
+                return GALLERY[category][0]
+    return GALLERY["generiche"][0]
 
 def hashtags(title):
     t = title.lower()
@@ -105,7 +95,7 @@ async def main():
         link = entry.link
         uid = make_id(title)
 
-        # === FORZATURA RESET (RIATTIVAMI DOPO IL PRIMO AVVIO) ===
+        # === FORZATURA RESET (Mantenuta per sbloccare l'invio immediato delle 10 notizie) ===
         # if uid in posted:
         #     print(f"Saltato: {title}")
         #     continue
@@ -114,24 +104,19 @@ async def main():
         img_url = select_best_image(title)
         
         try:
-            img_res = requests.get(img_url, timeout=10)
-            if img_res.status_code == 200:
-                image_stream = io.BytesIO(img_res.content)
-                image_stream.name = "one_piece_news.jpg"
+            # Mandiamo direttamente l'URL a Telegram, bypassando i controlli IP anti-bot
+            message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
+            
+            await bot.send_photo(chat_id=CHAT_ID, photo=img_url, caption=message)
+            print(f"Inviato con successo tramite URL nativo!")
+            
+            posted.add(uid)
+            with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                f.write(f"{uid}\n")
                 
-                message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
-                
-                await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message)
-                print(f"Inviato!")
-                
-                posted.add(uid)
-                with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                    f.write(f"{uid}\n")
-                    
-                new_posts_counter += 1
-                await asyncio.sleep(5)
-            else:
-                print(f"Errore download immagine: {img_res.status_code}")
+            new_posts_counter += 1
+            await asyncio.sleep(4)
+            
         except Exception as e:
             print(f"Errore Telegram: {e}")
 
