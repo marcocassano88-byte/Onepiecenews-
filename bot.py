@@ -17,6 +17,7 @@ ACCOUNTS = [
     "OPLiveActionIT"   
 ]
 
+# LISTA CORRETTA DELLE ISTANZE
 NITTER_INSTANCES = [
     "https://nitter.privacydev.net",
     "https://nitter.perennialte.ch",
@@ -25,7 +26,7 @@ NITTER_INSTANCES = [
     "https://nitter.cz"
 ]
 
-# GALLERIA DI IMMAGINI HD SICURE (Se il tweet è solo testo, usiamo una di queste a rotazione!)
+# GALLERIA DI IMMAGINI HD DI RISERVA (Se il tweet è solo testo)
 FALLBACK_IMAGES = [
     "https://images.everyeye.it/img-notizie/one-piece-remake-wit-studio-cambiera-storia-v1-4-690226.jpg",
     "https://www.drcommodore.it/wp-content/uploads/2023/08/one-piece-gear-5.jpg",
@@ -66,7 +67,8 @@ async def main():
         print(f"\n--- Ricerca post per: @{account} ---")
         feed = None
         
-        for instance in NIMTER_INSTANCES:
+        # Prova i server a rotazione
+        for instance in NITTER_INSTANCES:
             url = f"{instance}/{account}/rss"
             try:
                 response = requests.get(url, headers=HEADERS, timeout=10)
@@ -74,6 +76,7 @@ async def main():
                     temp_feed = feedparser.parse(response.text)
                     if temp_feed.entries:
                         feed = temp_feed
+                        print(f" -> Connesso a {instance}")
                         break
             except:
                 continue
@@ -82,7 +85,7 @@ async def main():
             print(f"Server Nitter occupati per @{account}. Salto.")
             continue
 
-        # Alziamo a 20 post storici ad account per spingere al massimo il riempimento
+        # Elabora fino a 20 post storici ad account per riempire il canale
         for entry in feed.entries[:20]:
             raw_text = entry.get("title", "")
             if not raw_text:
@@ -92,14 +95,20 @@ async def main():
             if uid in posted_ids:
                 continue
 
-            # 1. Cerchiamo l'immagine originale del tweet
+            # 1. Estrazione avanzata dell'immagine nativa di X
             img_url = None
             if "media_thumbnail" in entry and entry["media_thumbnail"]:
                 img_url = entry["media_thumbnail"][0]["url"]
             elif "enclosure" in entry:
                 img_url = entry["enclosure"]["url"]
+            
+            # Ricerca profonda dell'immagine nei tag della descrizione (Nitter le mette spesso lì)
+            if not img_url and "description" in entry:
+                img_match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', entry["description"])
+                if img_match:
+                    img_url = img_match.group(1)
 
-            # 2. SE NON C'È L'IMMAGINE, USIAMO LA NOSTRA GALLERIA DI COPPERTINE A ROTAZIONE
+            # 2. Se non c'è nessuna immagine associata, usa la galleria a rotazione
             if not img_url or not img_url.startswith("http"):
                 img_url = FALLBACK_IMAGES[fallback_index % len(FALLBACK_IMAGES)]
                 fallback_index += 1
@@ -118,21 +127,21 @@ async def main():
             message += f"\n👉 <a href='https://x.com/{account}'>Apri il post originale su X</a>\n\n#{account.lower()} #onepiece #leak"
 
             try:
-                # Ora inviamo SEMPRE come foto gigante a tutto schermo
+                # Forza sempre l'invio della foto a tutto schermo
                 await bot.send_photo(
                     chat_id=CHAT_ID,
                     photo=img_url,
                     caption=message,
                     parse_mode="HTML"
                 )
-                print(f" -> [OK] Post inviato con immagine a schermo intero!")
+                print(f" -> [OK] Post inviato!")
                 
                 with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                     f.write(f"{uid}\n")
                 posted_ids.add(uid)
                 
                 total_uploaded += 1
-                await asyncio.sleep(6) # Pausa di sicurezza per fare le cose per bene
+                await asyncio.sleep(6) # Pausa di sicurezza anti-flood
                 
             except Exception as e:
                 print(f" -> Errore d'invio finale: {e}")
