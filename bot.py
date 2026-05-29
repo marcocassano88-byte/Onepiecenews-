@@ -6,6 +6,7 @@ import feedparser
 import requests
 from telegram import Bot
 import io
+from PIL import Image, ImageDraw
 
 # Configurazione credenziali da variabili d'ambiente GitHub
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -23,16 +24,17 @@ if os.path.exists(HISTORY_FILE):
     with open(HISTORY_FILE, "r", encoding="utf-8") as f:
         posted = set(line.strip() for line in f if line.strip())
 
-# === IMMAGINE FAILSAFE (DIFESA DEFINITIVA) ===
-# Una piccola immagine di sicurezza in base64 nel caso in cui i download falliscano
-DEFAULT_IMAGE_BASE64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAMAAAC5zwKfAAAAbFBMVEX///8zM/+AgP+fn/9wYP8rG/+Vlf+8vP8XF/+2tv+np/+Dg/8PD/9ERM9ISE+AgI9wcI+rq6/AwP8nJ//AwM93d/+UlM+2tv9PT8+jo//Pz/8vL/+wsL84N+97e+8iIu8PDu97e+8AAAAsiXoYAAAACXBIWXMAAAsTAAALEwEAmpwYAAAByklEQVRYhc2S526DMBBEZ2iG9p4A//+/7u4UqLhB0ZVsXyK1lW7pZpD64T1oR1GUTdM0TdN/j/Xj3h55e71Z5iS28Uaz1u1Hl9x+Y5s8m77Z5mS7S5/H5tn0zXbzfO8v59vW4fN9v5xvW4fP9/1yvm0dPt/3yfm2dfh83yfn29bh832fnG9bh8/3fXK+bR0+3/fJ+bZ1+Hxf4Gvr8Pm+QM63rcPn+z4537YOn+/75HzaOny+75Pzberw+b5Pzre5P8n+Gv7L5tnszXbzfO8v59vW4fN9v5xvW4fP9/1yvm0dPt/3yfm2dfh83yfn29bh832fnG9bh8/3fXK+bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+HxfHGe/bR0+3/fJ+bZ1+Hxf3L9L8P5dAv8A8/Yp5R+h1wAAAABJRU5ErkJggg=="
-)
-
-import base64
-
-def get_failsafe_image():
-    return base64.b64decode(DEFAULT_IMAGE_BASE64)
+def generate_failsafe_image():
+    """Genera al volo un'immagine PNG valida (riquadro arancione stile One Piece) per Telegram."""
+    img = Image.new("RGB", (800, 500), color="#F39C12")
+    d = ImageDraw.Draw(img)
+    # Crea un piccolo design minimale per non mandare una foto vuota
+    d.rectangle([(20, 20), (780, 480)], outline="#FFFFFF", width=5)
+    
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    img_byte_arr.seek(0)
+    return img_byte_arr
 
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
@@ -140,10 +142,10 @@ async def main():
                 with open(image_path, "rb") as photo_file:
                     await bot.send_photo(chat_id=CHAT_ID, photo=photo_file, caption=message)
             else:
-                print(f"Attivazione Failsafe Image per: {title}")
-                failsafe_bytes = io.BytesIO(get_failsafe_image())
-                failsafe_bytes.name = "default_failsafe.png"
-                await bot.send_photo(chat_id=CHAT_ID, photo=failsafe_bytes, caption=message)
+                print(f"Attivazione Failsafe Image dinamica per: {title}")
+                failsafe_file = generate_failsafe_image()
+                failsafe_file.name = "news_default.png"
+                await bot.send_photo(chat_id=CHAT_ID, photo=failsafe_file, caption=message)
             
             print(f"Pubblicato con successo: {title}")
             
