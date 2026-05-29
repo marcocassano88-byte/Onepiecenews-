@@ -4,6 +4,8 @@ import hashlib
 import feedparser
 import requests
 from telegram import Bot
+import io
+from PIL import Image
 
 # Configurazione credenziali
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -12,17 +14,6 @@ CHAT_ID = os.getenv("CHAT_ID")
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
-# Galleria con link STATICI reali - Niente più Larry David o blocchi
-GALLERY = {
-    "netflix": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Logo_of_the_Wit_Studio.svg/1200px-Logo_of_the_Wit_Studio.svg.png", # Wit Studio Remake
-    "live_action": "https://i.postimg.cc/0jXm0L16/one-piece-live-action.jpg", # Poster Live Action ufficiale
-    "milano": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Milano_Mondadori_Duomo.jpg/1200px-Milano_Mondadori_Duomo.jpg", # Mondadori Duomo
-    "luffy": "https://i.postimg.cc/Vv3XwX8M/luffy-gear5.jpg", # Luffy Gear 5
-    "zoro": "https://i.postimg.cc/9F7bM6z7/zoro.jpg", # Zoro
-    "sanji": "https://i.postimg.cc/4N5Vdfm8/sanji.jpg", # Sanji
-    "generiche": "https://i.postimg.cc/bN1mK7Yx/one-piece-crew.jpg" # Ciurma completa
-}
-
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
@@ -30,22 +21,13 @@ HEADERS = {
 def make_id(text):
     return hashlib.md5(text.encode('utf-8', errors='ignore')).hexdigest()
 
-def select_best_image(title):
-    t = title.lower()
-    if "netflix" in t or "remake" in t or "wit" in t:
-        return GALLERY["netflix"]
-    elif "live" in t or "action" in t or "attori" in t:
-        return GALLERY["live_action"]
-    elif "milano" in t or "store" in t or "pop-up" in t:
-        return GALLERY["milano"]
-    elif "zoro" in t:
-        return GALLERY["zoro"]
-    elif "sanji" in t:
-        return GALLERY["sanji"]
-    elif "luffy" in t or "rufy" in t or "gear" in t:
-        return GALLERY["luffy"]
-    
-    return GALLERY["generiche"]
+def create_fallback_image():
+    """Genera un'immagine di riserva scura se l'articolo non ha una foto, senza usare link esterni."""
+    img = Image.new("RGB", (800, 450), color="#1c1c24")
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format='JPEG')
+    img_byte_arr.seek(0)
+    return img_byte_arr
 
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
@@ -54,7 +36,6 @@ async def main():
 
     bot = Bot(token=BOT_TOKEN)
     
-    # Pulizia forzata per eliminare i vecchi post di Larry David
     if os.path.exists(HISTORY_FILE):
         try: os.remove(HISTORY_FILE)
         except: pass
@@ -74,13 +55,37 @@ async def main():
         link = entry.get("link", "https://news.google.com")
         
         print(f"Elaborazione: {title}")
-        img_url = select_best_image(title)
+        
+        # Cerchiamo di prendere l'immagine reale che Google News associa all'articolo
+        source_img_url = None
+        if "media_content" in entry:
+            source_img_url = entry.media_content[0].get("url")
+        elif "links" in entry:
+            for l in entry.links:
+                if "image" in l.get("type", ""):
+                    source_img_url = l.get("href")
+                    break
 
+        image_stream = None
+        if source_img_url:
+            try:
+                # Il server scarica l'immagine REALE della notizia
+                img_res = requests.get(source_img_url, headers=HEADERS, timeout=10)
+                if img_res.status_code == 200:
+                    image_stream = io.BytesIO(img_res.content)
+            except:
+                pass
+
+        # Se non c'è l'immagine o il download fallisce, usa la riserva interna vuota
+        if not image_stream:
+            image_stream = create_fallback_image()
+            
+        image_stream.name = "thumbnail.jpg"
         message = f"🔥 *{title}*\n\n👉 *Leggi la notizia completa qui:* {link}\n\n#onepiece #anime #manga"
         
         try:
-            # Invio tramite URL statico e sicuro
-            await bot.send_photo(chat_id=CHAT_ID, photo=img_url, caption=message, parse_mode="Markdown")
+            # Invio del file binario scaricato. Telegram DEVE accettarlo perché è un file locale, non un link.
+            await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message, parse_mode="Markdown")
             print(" -> Inviato!")
             
             with open(HISTORY_FILE, "a", encoding="utf-8") as f:
@@ -89,7 +94,7 @@ async def main():
             new_posts_counter += 1
             await asyncio.sleep(4)
         except Exception as e:
-            print(f" -> Errore d'invio: {e}")
+            print(f" -> Errore d'invio definitivo: {e}")
 
     print(f"Fine. Inviati: {new_posts_counter}")
 
