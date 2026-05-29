@@ -15,40 +15,153 @@ RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&cei
 
 posted = set()
 
+CACHE_DIR = "cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
-# 🖼️ IMMAGINI STABILI (URL DIRETTI TESTATI)
-images = {
-    "luffy": [
-        "https://static.wikia.nocookie.net/onepiece/images/5/56/Luffy_Gear_5.png",
-        "https://static.wikia.nocookie.net/onepiece/images/8/80/Luffy_Anime.png"
-    ],
-    "zoro": [
-        "https://static.wikia.nocookie.net/onepiece/images/6/65/Zoro_Post_Timeskip.png"
-    ],
-    "shanks": [
-        "https://static.wikia.nocookie.net/onepiece/images/5/58/Shanks.png"
-    ],
-    "nami": [
-        "https://static.wikia.nocookie.net/onepiece/images/2/2f/Nami_Anime.png"
-    ],
-    "default": [
-        "https://static.wikia.nocookie.net/onepiece/images/2/2a/One_Piece_Logo.png"
-    ]
+# 🧠 100 PERSONAGGI → MAPPA CATEGORIE WIKIMEDIA
+characters_map = {
+    "luffy": "Monkey D. Luffy",
+    "zoro": "Roronoa Zoro",
+    "nami": "Nami (One Piece)",
+    "usopp": "Usopp",
+    "sanji": "Sanji",
+    "chopper": "Tony Tony Chopper",
+    "robin": "Nico Robin",
+    "franky": "Franky",
+    "brook": "Brook",
+    "jimbei": "Jinbe",
+
+    "shanks": "Shanks (One Piece)",
+    "buggy": "Buggy (One Piece)",
+    "mihawk": "Dracule Mihawk",
+    "law": "Trafalgar Law",
+    "kid": "Eustass Kid",
+    "sabo": "Sabo (One Piece)",
+    "ace": "Portgas D. Ace",
+    "whitebeard": "Edward Newgate",
+    "kaido": "Kaido",
+    "big mom": "Charlotte Linlin",
+
+    "roger": "Gol D. Roger",
+    "dragon": "Monkey D. Dragon",
+    "garp": "Monkey D. Garp",
+    "akainu": "Sakazuki",
+    "aokiji": "Kuzan",
+    "kizaru": "Borsalino",
+    "imu": "Imu (One Piece)",
+
+    "doflamingo": "Donquixote Doflamingo",
+    "crocodile": "Crocodile (One Piece)",
+    "enel": "Enel (One Piece)",
+    "lucci": "Rob Lucci",
+    "kuma": "Bartholomew Kuma",
+    "bonney": "Jewelry Bonney",
+
+    "yamato": "Yamato (One Piece)",
+    "momonosuke": "Momonosuke",
+    "kinemon": "Kin'emon",
+
+    "moria": "Gecko Moria",
+    "hancock": "Boa Hancock",
+    "ivankov": "Emporio Ivankov",
+
+    "rocks": "Rocks D. Xebec",
+
+    "gear 5": "Monkey D. Luffy",
+    "joy boy": "Joy Boy",
+    "nika": "Nika (One Piece)"
 }
 
-# 🔥 trova immagine
-def get_image(title):
+# 🔥 PRENDE IMMAGINI REALI DA CATEGORIA WIKIMEDIA
+def get_wiki_image(category_name):
+    try:
+        url = "https://commons.wikimedia.org/w/api.php"
+
+        # 1️⃣ prendi file dalla categoria
+        params = {
+            "action": "query",
+            "format": "json",
+            "list": "categorymembers",
+            "cmtitle": "Category:" + category_name,
+            "cmtype": "file",
+            "cmlimit": 50
+        }
+
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+
+        files = data.get("query", {}).get("categorymembers", [])
+
+        if not files:
+            return None
+
+        random_file = random.choice(files)["title"]
+
+        # 2️⃣ ottieni URL immagine reale
+        params2 = {
+            "action": "query",
+            "format": "json",
+            "titles": random_file,
+            "prop": "imageinfo",
+            "iiprop": "url"
+        }
+
+        r2 = requests.get(url, params=params2, timeout=10)
+        data2 = r2.json()
+
+        pages = data2.get("query", {}).get("pages", {})
+
+        for p in pages.values():
+            if "imageinfo" in p:
+                return p["imageinfo"][0]["url"]
+
+    except:
+        pass
+
+    return None
+
+# 🖼️ CACHE (evita richieste continue)
+def get_character_image(title):
     t = title.lower()
 
-    for key in images:
+    for key, category in characters_map.items():
         if key in t:
-            return random.choice(images[key])
+            cache_path = os.path.join(CACHE_DIR, key + ".jpg")
 
-    return random.choice(images["default"])
+            if os.path.exists(cache_path):
+                return cache_path
 
-# 🔥 hashtag
+            img_url = get_wiki_image(category)
+
+            if img_url:
+                try:
+                    img_data = requests.get(img_url, timeout=10).content
+                    with open(cache_path, "wb") as f:
+                        f.write(img_data)
+                    return cache_path
+                except:
+                    pass
+
+    # fallback generale
+    cache_path = os.path.join(CACHE_DIR, "default.jpg")
+
+    if os.path.exists(cache_path):
+        return cache_path
+
+    img_url = get_wiki_image("One Piece")
+
+    if img_url:
+        img_data = requests.get(img_url, timeout=10).content
+        with open(cache_path, "wb") as f:
+            f.write(img_data)
+        return cache_path
+
+    return None
+
+# 🔥 HASHTAG AUTOMATICI
 def hashtags(title):
     t = title.lower()
     tags = ["#onepiece", "#anime", "#manga"]
@@ -57,10 +170,11 @@ def hashtags(title):
     if "zoro" in t: tags.append("#zoro")
     if "shanks" in t: tags.append("#shanks")
     if "gear 5" in t: tags.append("#gear5")
+    if "imu" in t: tags.append("#imu")
 
     return " ".join(tags)
 
-# 🚀 LOOP
+# 🚀 LOOP PRINCIPALE
 while True:
     feed = feedparser.parse(RSS_FEED)
 
@@ -75,7 +189,7 @@ while True:
 
         posted.add(uid)
 
-        image_url = get_image(title)
+        image = get_character_image(title)
 
         message = f"""🔥 {title}
 
@@ -84,12 +198,14 @@ while True:
 {hashtags(title)}"""
 
         try:
-            # 🔥 SEMPRE send_photo (mai fallback text)
-            bot.send_photo(
-                chat_id=CHAT_ID,
-                photo=image_url,
-                caption=message
-            )
+            if image:
+                bot.send_photo(
+                    chat_id=CHAT_ID,
+                    photo=open(image, "rb"),
+                    caption=message
+                )
+            else:
+                bot.send_message(chat_id=CHAT_ID, text=message)
 
             print("POST:", title)
 
