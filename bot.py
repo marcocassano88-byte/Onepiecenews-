@@ -18,14 +18,22 @@ posted = set()
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
+# 🔥 prende immagine dal link dell'articolo
 def get_image_from_page(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         r = requests.get(url, headers=headers, timeout=10)
+
         soup = BeautifulSoup(r.text, "html.parser")
 
+        # prova og:image (metodo principale)
         img = soup.find("meta", property="og:image")
-        if img:
+        if img and img.get("content"):
+            return img["content"]
+
+        # fallback (alcuni siti usano twitter:image)
+        img = soup.find("meta", property="twitter:image")
+        if img and img.get("content"):
             return img["content"]
 
     except:
@@ -41,6 +49,7 @@ while True:
         link = entry.link
 
         uid = make_id(title)
+
         if uid in posted:
             continue
 
@@ -48,6 +57,7 @@ while True:
 
         image = get_image_from_page(link)
 
+        # fallback sicuro se non trova immagine
         if not image:
             image = "https://i.imgur.com/8Km9tLL.jpg"
 
@@ -67,4 +77,5 @@ while True:
 
         time.sleep(25)
 
+    print("⏳ Attendo nuovi articoli...")
     time.sleep(300)
