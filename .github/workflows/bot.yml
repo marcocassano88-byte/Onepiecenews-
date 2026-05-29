@@ -1,150 +1,37 @@
-import os
-import asyncio
-import hashlib
-import random
-import feedparser
-import requests
-from telegram import Bot
+name: One Piece Auto Poster
 
-# Configurazione credenziali da variabili d'ambiente GitHub
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+on:
+  schedule:
+    - cron: '0 * * * *' # Gira automaticamente ogni ora
+  workflow_dispatch: # Ti permette di avviarlo anche a mano premendo un tasto su GitHub
 
-RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
 
-CACHE_DIR = "cache"
-HISTORY_FILE = "posted_urls.txt"
-os.makedirs(CACHE_DIR, exist_ok=True)
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-# Carica lo storico dei post già inviati per evitare duplicati su GitHub
-posted = set()
-if os.path.exists(HISTORY_FILE):
-    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-        posted = set(line.strip() for line in f if line.strip())
+    - name: Configura Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
 
-def make_id(text):
-    return hashlib.md5(text.encode()).hexdigest()
+    - name: Installa dipendenze
+      run: |
+        pip install python-telegram-bot feedparser requests
 
-# Mappa categorie Wikimedia
-characters_map = {
-    "luffy": "Monkey D. Luffy", "zoro": "Roronoa Zoro", "nami": "Nami (One Piece)",
-    "usopp": "Usopp", "sanji": "Sanji", "chopper": "Tony Tony Chopper",
-    "robin": "Nico Robin", "franky": "Franky", "brook": "Brook", "jimbei": "Jinbe",
-    "shanks": "Shanks (One Piece)", "buggy": "Buggy (One Piece)", "mihawk": "Dracule Mihawk",
-    "law": "Trafalgar Law", "kid": "Eustass Kid", "sabo": "Sabo (One Piece)",
-    "ace": "Portgas D. Ace", "whitebeard": "Edward Newgate", "kaido": "Kaido",
-    "big mom": "Charlotte Linlin", "roger": "Gol D. Roger", "dragon": "Monkey D. Dragon",
-    "garp": "Monkey D. Garp", "akainu": "Sakazuki", "aokiji": "Kuzan", "kizaru": "Borsalino",
-    "imu": "Imu (One Piece)", "doflamingo": "Donquixote Doflamingo", "crocodile": "Crocodile (One Piece)",
-    "enel": "Enel (One Piece)", "lucci": "Rob Lucci", "kuma": "Bartholomew Kuma",
-    "bonney": "Jewelry Bonney", "yamato": "Yamato (One Piece)", "momonosuke": "Momonosuke",
-    "kinemon": "Kin'emon", "moria": "Gecko Moria", "hancock": "Boa Hancock",
-    "ivankov": "Emporio Ivankov", "rocks": "Rocks D. Xebec", "gear 5": "Monkey D. Luffy",
-    "joy boy": "Joy Boy", "nika": "Nika (One Piece)"
-}
+    - name: Esegui lo Script Bot
+      env:
+        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        CHAT_ID: ${{ secrets.CHAT_ID }}
+      run: python bot.py
 
-def get_wiki_image(category_name):
-    try:
-        url = "https://commons.wikimedia.org/w/api.php"
-        params = {
-            "action": "query", "format": "json", "list": "categorymembers",
-            "cmtitle": "Category:" + category_name, "cmtype": "file", "cmlimit": 50
-        }
-        r = requests.get(url, params=params, timeout=10)
-        files = r.json().get("query", {}).get("categorymembers", [])
-        if not files: return None
-
-        random_file = random.choice(files)["title"]
-        params2 = {
-            "action": "query", "format": "json", "titles": random_file,
-            "prop": "imageinfo", "iiprop": "url"
-        }
-        r2 = requests.get(url, params=params2, timeout=10)
-        pages = r2.json().get("query", {}).get("pages", {})
-        for p in pages.values():
-            if "imageinfo" in p:
-                return p["imageinfo"][0]["url"]
-    except:
-        pass
-    return None
-
-def get_character_image(title):
-    t = title.lower()
-    for key, category in characters_map.items():
-        if key in t:
-            cache_path = os.path.join(CACHE_DIR, f"{key}.jpg")
-            if os.path.exists(cache_path): return cache_path
-            img_url = get_wiki_image(category)
-            if img_url:
-                try:
-                    img_data = requests.get(img_url, timeout=10).content
-                    with open(cache_path, "wb") as f: f.write(img_data)
-                    return cache_path
-                except: pass
-
-    cache_path = os.path.join(CACHE_DIR, "default.jpg")
-    if os.path.exists(cache_path): return cache_path
-    img_url = get_wiki_image("One Piece")
-    if img_url:
-        try:
-            img_data = requests.get(img_url, timeout=10).content
-            with open(cache_path, "wb") as f: f.write(img_data)
-            return cache_path
-        except: pass
-    return None
-
-def hashtags(title):
-    t = title.lower()
-    tags = ["#onepiece", "#anime", "#manga"]
-    if "luffy" in t: tags.append("#luffy")
-    if "zoro" in t: tags.append("#zoro")
-    if "shanks" in t: tags.append("#shanks")
-    if "gear 5" in t: tags.append("#gear5")
-    if "imu" in t: tags.append("#imu")
-    return " ".join(tags)
-
-async def main():
-    if not BOT_TOKEN or not CHAT_ID:
-        print("Errore: BOT_TOKEN o CHAT_ID non configurati nelle variabili d'ambiente.")
-        return
-
-    bot = Bot(token=BOT_TOKEN)
-    feed = feedparser.parse(RSS_FEED)
-    new_posts_counter = 0
-
-    # Analizza gli ultimi 10 articoli del Feed
-    for entry in feed.entries[:10]:
-        title = entry.title
-        link = entry.link
-        uid = make_id(title)
-
-        if uid in posted:
-            continue
-
-        image = get_character_image(title)
-        message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
-
-        try:
-            if image and os.path.exists(image):
-                with open(image, "rb") as photo_file:
-                    await bot.send_photo(chat_id=CHAT_ID, photo=photo_file, caption=message)
-            else:
-                await bot.send_message(chat_id=CHAT_ID, text=message)
-            
-            print(f"Pubblicato con successo: {title}")
-            
-            # Aggiungi allo storico locale
-            posted.add(uid)
-            with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{uid}\n")
-                
-            new_posts_counter += 1
-            await asyncio.sleep(5) # Pausa di sicurezza tra un invio e l'altro
-
-        except Exception as e:
-            print(f"Errore durante l'invio di '{title}': {e}")
-
-    print(f"Task terminato. Nuovi post pubblicati: {new_posts_counter}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    - name: Salva lo storico dei post (Evita duplicati al prossimo avvio)
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add posted_urls.txt
+        git commit -m "Aggiornato storico post inviati [skip ci]" || exit 0
+        git push
