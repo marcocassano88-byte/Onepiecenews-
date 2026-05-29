@@ -1,7 +1,6 @@
 import os
 import time
 import hashlib
-import random
 import feedparser
 import requests
 from telegram import Bot
@@ -11,49 +10,18 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 bot = Bot(token=BOT_TOKEN)
 
-# 🔥 RSS (NON CAMBIATO)
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 
 posted = set()
 
+CACHE_DIR = "cache"
+
+os.makedirs(CACHE_DIR, exist_ok=True)
+
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
-# 🖼️ IMMAGINI DA WIKIMEDIA (STABILI + HD)
-def get_wiki_images(query):
-    try:
-        url = "https://commons.wikimedia.org/w/api.php"
-
-        params = {
-            "action": "query",
-            "format": "json",
-            "generator": "search",
-            "gsrsearch": query,
-            "gsrlimit": 20,
-            "prop": "imageinfo",
-            "iiprop": "url"
-        }
-
-        r = requests.get(url, params=params, timeout=10)
-        data = r.json()
-
-        pages = data.get("query", {}).get("pages", {})
-
-        images = []
-
-        for p in pages.values():
-            if "imageinfo" in p:
-                images.append(p["imageinfo"][0]["url"])
-
-        if images:
-            return random.choice(images)
-
-    except:
-        pass
-
-    return None
-
-# 🔥 100+ PERSONAGGI ONE PIECE + LIVE ACTION
+# 🔥 100 PERSONAGGI ONE PIECE
 characters_map = {
     "luffy": "Monkey D. Luffy One Piece",
     "zoro": "Roronoa Zoro One Piece",
@@ -72,14 +40,14 @@ characters_map = {
     "law": "Trafalgar Law One Piece",
     "kid": "Eustass Kid One Piece",
     "sabo": "Sabo One Piece",
-    "ace": "Portgas D. Ace One Piece",
+    "ace": "Portgas D Ace One Piece",
     "whitebeard": "Edward Newgate Whitebeard One Piece",
     "kaido": "Kaido One Piece",
-    "big mom": "Charlotte Linlin Big Mom One Piece",
+    "big mom": "Charlotte Linlin One Piece",
 
-    "roger": "Gol D. Roger One Piece",
-    "dragon": "Monkey D. Dragon One Piece",
-    "garp": "Monkey D. Garp One Piece",
+    "roger": "Gol D Roger One Piece",
+    "dragon": "Monkey D Dragon One Piece",
+    "garp": "Monkey D Garp One Piece",
     "akainu": "Sakazuki Akainu One Piece",
     "aokiji": "Kuzan Aokiji One Piece",
     "kizaru": "Borsalino Kizaru One Piece",
@@ -96,56 +64,84 @@ characters_map = {
     "momonosuke": "Momonosuke One Piece",
     "kinemon": "Kinemon One Piece",
 
-    "gecko moria": "Gecko Moria One Piece",
+    "moria": "Gecko Moria One Piece",
     "hancock": "Boa Hancock One Piece",
     "ivankov": "Emporio Ivankov One Piece",
 
     "rocks": "Rocks D Xebec One Piece",
 
-    "luffy gear 5": "Gear 5 Luffy One Piece",
+    "gear 5": "Gear 5 Luffy One Piece",
     "joy boy": "Joy Boy One Piece",
-    "nika": "Nika Luffy One Piece",
-
-    # 🎬 LIVE ACTION NETFLIX
-    "live action luffy": "One Piece Netflix Luffy",
-    "live action zoro": "One Piece Netflix Zoro",
-    "live action nami": "One Piece Netflix Nami",
-    "live action sanji": "One Piece Netflix Sanji",
-    "live action usopp": "One Piece Netflix Usopp",
-    "live action garp": "One Piece Netflix Garp",
-    "live action buggy": "One Piece Netflix Buggy",
-    "live action mihawk": "One Piece Netflix Mihawk"
+    "nika": "Nika Luffy One Piece"
 }
 
-# 🖼️ trova immagine personaggio
+# 🔥 scarica immagine e la salva in cache
+def get_image(query, key):
+    cache_path = os.path.join(CACHE_DIR, f"{key}.jpg")
+
+    # se esiste già → usa cache
+    if os.path.exists(cache_path):
+        return cache_path
+
+    try:
+        url = "https://commons.wikimedia.org/w/api.php"
+
+        params = {
+            "action": "query",
+            "format": "json",
+            "generator": "search",
+            "gsrsearch": query,
+            "gsrlimit": 1,
+            "prop": "imageinfo",
+            "iiprop": "url"
+        }
+
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+
+        pages = data.get("query", {}).get("pages", {})
+
+        for p in pages.values():
+            if "imageinfo" in p:
+                img_url = p["imageinfo"][0]["url"]
+
+                img_data = requests.get(img_url).content
+
+                with open(cache_path, "wb") as f:
+                    f.write(img_data)
+
+                return cache_path
+
+    except:
+        pass
+
+    return None
+
+# 🔥 trova immagine personaggio
 def get_character_image(title):
     title = title.lower()
 
     for key, query in characters_map.items():
         if key in title:
-            return get_wiki_images(query)
+            return get_image(query, key)
 
-    return get_wiki_images("One Piece anime")
+    # fallback One Piece generico
+    return get_image("One Piece anime", "default")
 
-# 🔥 HASHTAG AUTOMATICI
+# 🔥 hashtag
 def hashtags(title):
     t = title.lower()
     tags = ["#onepiece", "#anime", "#manga"]
 
-    if "luffy" in t:
-        tags.append("#luffy")
-    if "zoro" in t:
-        tags.append("#zoro")
-    if "shanks" in t:
-        tags.append("#shanks")
-    if "gear 5" in t:
-        tags.append("#gear5")
-    if "imu" in t:
-        tags.append("#imu")
+    if "luffy" in t: tags.append("#luffy")
+    if "zoro" in t: tags.append("#zoro")
+    if "shanks" in t: tags.append("#shanks")
+    if "gear 5" in t: tags.append("#gear5")
+    if "imu" in t: tags.append("#imu")
 
     return " ".join(tags)
 
-# 🚀 LOOP PRINCIPALE
+# 🚀 LOOP
 while True:
     feed = feedparser.parse(RSS_FEED)
 
@@ -162,9 +158,6 @@ while True:
 
         image = get_character_image(title)
 
-        if not image:
-            image = "https://i.imgur.com/8Km9tLL.jpg"
-
         message = f"""🔥 {title}
 
 👉 Fonte: {link}
@@ -172,11 +165,10 @@ while True:
 {hashtags(title)}"""
 
         try:
-            bot.send_photo(
-                chat_id=CHAT_ID,
-                photo=image,
-                caption=message
-            )
+            if image:
+                bot.send_photo(chat_id=CHAT_ID, photo=open(image, "rb"), caption=message)
+            else:
+                bot.send_message(chat_id=CHAT_ID, text=message)
 
             print("POST:", title)
 
