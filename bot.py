@@ -4,15 +4,21 @@ import hashlib
 import feedparser
 import requests
 from telegram import Bot
+import io
+import re
+from PIL import Image, ImageDraw, ImageFont
 
-# Configurazione credenziali da variabili d'ambiente GitHub
+# Configurazione credenziali
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
-# Carica lo storico dei post già inviati per evitare duplicati
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
 posted = set()
 if os.path.exists(HISTORY_FILE):
     with open(HISTORY_FILE, "r", encoding="utf-8") as f:
@@ -21,40 +27,86 @@ if os.path.exists(HISTORY_FILE):
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
-# 🖼️ DATABASE DI IMMAGINI REALI E COPERTINE FUNZIONANTI (URL Diretti)
-# Se il titolo contiene una di queste parole, usa direttamente l'immagine associata.
-ONE_PIECE_IMAGES = {
-    "luffy": "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800&auto=format&fit=crop&q=80", # Anime/Manga concept
-    "zoro": "https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&auto=format&fit=crop&q=80",
-    "netflix": "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=800&auto=format&fit=crop&q=80", # Logo Netflix per news remake/live action
-    "remake": "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=800&auto=format&fit=crop&q=80",
-    "live-action": "https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=800&auto=format&fit=crop&q=80",
-    "milano": "https://images.unsplash.com/photo-1528731708534-816fe59f90cb?w=800&auto=format&fit=crop&q=80", # Pop-up store Milano
-    "store": "https://images.unsplash.com/photo-1528731708534-816fe59f90cb?w=800&auto=format&fit=crop&q=80"
-}
+def get_real_article_image(google_rss_link):
+    """Trova l'immagine reale dell'articolo seguendo il reindirizzamento di Google News."""
+    try:
+        # 1. Segui il link di Google News per trovare il sito reale
+        res = requests.get(google_rss_link, headers=HEADERS, timeout=5)
+        real_url = res.url
+        
+        # 2. Scarica la pagina reale
+        page_res = requests.get(real_url, headers=HEADERS, timeout=5)
+        html = page_res.text
+        
+        # 3. Cerca il tag Open Graph (og:image) usato da tutti i giornali per i social
+        image_match = re.search(r'<meta[^>]*property=["\']og:image["\'][^>]*content=["\']([^"\']+)["\']', html)
+        if not image_match:
+            image_match = re.search(r'<meta[^>]*content=["\']([^"\']+)["\'][^>]*property=["\']og:image["\']', html)
+            
+        if image_match:
+            img_url = image_match.group(1)
+            # Scarica l'immagine reale della notizia
+            img_data = requests.get(img_url, headers=HEADERS, timeout=5).content
+            
+            # Verifica che sia un'immagine valida prima di restituirla
+            img = Image.open(io.BytesIO(img_data))
+            img.verify()
+            
+            img_stream = io.BytesIO(img_data)
+            img_stream.seek(0)
+            return img_stream
+    except:
+        pass
+    return None
 
-# Immagine di copertina generale di One Piece (Usata se non ci sono parole chiave specifiche)
-DEFAULT_ONE_PIECE_IMAGE = "https://images.unsplash.com/photo-1560169897-fc0cdbdfa4d5?w=800&auto=format&fit=crop&q=80"
-
-def get_image_url_for_post(title):
-    """Scansiona il titolo e assegna l'URL dell'immagine corretta senza passare da Wikimedia."""
-    t = title.lower()
-    for key, url in ONE_PIECE_IMAGES.items():
-        if key in t:
-            return url
-    return DEFAULT_ONE_PIECE_IMAGE
+def generate_news_card(title):
+    """Crea un'immagine personalizzata con il titolo se non viene trovata un'immagine reale."""
+    # Sfondo sfumato scuro o rosso stile One Piece
+    img = Image.new("RGB", (800, 450), color="#1a1a1a")
+    d = ImageDraw.Draw(img)
+    
+    # Decorazione estetica bordi
+    d.rectangle([(15, 15), (785, 435)], outline="#E74C3C", width=4)
+    d.rectangle([(25, 25), (775, 425)], outline="#F39C12", width=2)
+    
+    # Tag del canale in alto
+    d.text((40, 40), "ONE PIECE ITALIA NEWS", fill="#F39C12")
+    
+    # Spezza il titolo per farlo stare nell'immagine
+    words = title.split()
+    lines = []
+    current_line = []
+    for word in words:
+        if len(" ".join(current_line + [word])) * 12 > 700:
+            lines.append(" ".join(current_line))
+            current_line = [word]
+        else:
+            current_line.append(word)
+    lines.append(" ".join(current_line))
+    
+    # Scrivi il testo centrato (usa il font di default del sistema)
+    y_text = 150
+    for line in lines[:5]:
+        d.text((50, y_text), line, fill="#FFFFFF")
+        y_text += 45
+        
+    img_byte_arr = io.BytesIO()
+    img.save(img_byte_arr, format='JPEG', quality=85)
+    img_byte_arr.seek(0)
+    return img_byte_arr
 
 def hashtags(title):
     t = title.lower()
     tags = ["#onepiece", "#anime", "#manga"]
     if "luffy" in t: tags.append("#luffy")
     if "zoro" in t: tags.append("#zoro")
-    if "netflix" in t: tags.append("#netflix")
+    if "netflix" in t or "remake" in t: tags.append("#netflix")
+    if "milano" in t or "pop up" in t: tags.append("#onepiecemilano")
     return " ".join(tags)
 
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
-        print("Errore: BOT_TOKEN o CHAT_ID non configurati.")
+        print("Errore: Credenziali mancanti.")
         return
 
     bot = Bot(token=BOT_TOKEN)
@@ -69,32 +121,36 @@ async def main():
         if uid in posted:
             continue
 
-        # Ottieni l'URL dell'immagine direttamente dal nostro database sicuro
-        image_url = get_image_url_for_post(title)
+        print(f"Elaborazione: {title}")
+        
+        # Prova a prendere l'immagine vera del giornale
+        image_stream = get_real_article_image(link)
+        is_failsafe = False
+        
+        # Se fallisce, genera la copertina con il titolo scritto sopra
+        if not image_stream:
+            print(f"Immagine nativa non trovata. Genero copertina grafica.")
+            image_stream = generate_news_card(title)
+            is_failsafe = True
+
         message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
 
         try:
-            # Telegram accetta direttamente un URL come stringa per il parametro photo!
-            # Questo evita download, file temporanei, PIL, cache e problemi di memoria.
-            await bot.send_photo(
-                chat_id=CHAT_ID,
-                photo=image_url,
-                caption=message
-            )
-            print(f"Pubblicato con successo: {title}")
+            image_stream.name = "news_image.jpg" if not is_failsafe else "news_card.jpg"
+            await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message)
+            print(f"Pubblicato: {title}")
             
-            # Salva nello storico per evitare duplicati
             posted.add(uid)
             with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{uid}\n")
                 
             new_posts_counter += 1
-            await asyncio.sleep(5) # Pausa di sicurezza
+            await asyncio.sleep(5)
 
         except Exception as e:
-            print(f"Errore nell'invio del post '{title}': {e}")
+            print(f"Errore invio: {e}")
 
-    print(f"Task terminato. Nuovi post pubblicati: {new_posts_counter}")
+    print(f"Fine sessione. Nuovi post: {new_posts_counter}")
 
 if __name__ == "__main__":
     asyncio.run(main())
