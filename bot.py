@@ -1,8 +1,8 @@
 import os
 import time
 import hashlib
-from telegram import Bot
 import feedparser
+from telegram import Bot
 from deep_translator import GoogleTranslator
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -31,7 +31,6 @@ while True:
         link = entry.link
 
         uid = make_id(title)
-
         if uid in posted:
             continue
 
@@ -39,16 +38,33 @@ while True:
 
         title_it = translate(title)
 
-        message = f"🔥 {title_it}\n\n👉 Fonte: {link}"
+        # 🔥 immagine automatica dal feed (OG IMAGE se esiste)
+        image = None
+
+        if "media_content" in entry:
+            try:
+                image = entry.media_content[0]["url"]
+            except:
+                pass
+
+        if not image:
+            image = "https://i.imgur.com/8Km9tLL.jpg"  # fallback
+
+        caption = f"🔥 {title_it}\n\n👉 Fonte: {link}"
 
         try:
-            bot.send_message(chat_id=CHAT_ID, text=message)
+            bot.send_photo(
+                chat_id=CHAT_ID,
+                photo=image,
+                caption=caption
+            )
+
             print("POST:", title_it)
 
         except Exception as e:
             print("Errore:", e)
 
-        time.sleep(20)
+        time.sleep(25)
 
-    print("Attendo nuovo ciclo...")
+    print("Attendo nuovi articoli...")
     time.sleep(300)
