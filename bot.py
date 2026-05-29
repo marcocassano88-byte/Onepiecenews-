@@ -4,8 +4,6 @@ import hashlib
 import feedparser
 import requests
 from telegram import Bot
-import io
-from PIL import Image
 
 # Configurazione credenziali
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -21,14 +19,6 @@ HEADERS = {
 def make_id(text):
     return hashlib.md5(text.encode('utf-8', errors='ignore')).hexdigest()
 
-def create_fallback_image():
-    """Genera un'immagine di riserva scura se l'articolo non ha una foto, senza usare link esterni."""
-    img = Image.new("RGB", (800, 450), color="#1c1c24")
-    img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='JPEG')
-    img_byte_arr.seek(0)
-    return img_byte_arr
-
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
         print("Errore: Credenziali mancanti.")
@@ -36,6 +26,7 @@ async def main():
 
     bot = Bot(token=BOT_TOKEN)
     
+    # Pulizia dello storico per questo invio di test
     if os.path.exists(HISTORY_FILE):
         try: os.remove(HISTORY_FILE)
         except: pass
@@ -47,46 +38,28 @@ async def main():
         print(f"Errore feed: {e}")
         return
 
-    print(f"Articoli trovati: {len(feed.entries)}")
+    print(f"Articoli trovati nel feed: {len(feed.entries)}")
     new_posts_counter = 0
 
     for i, entry in enumerate(feed.entries[:5]):
         title = entry.get("title", "Nuova notizia One Piece")
         link = entry.get("link", "https://news.google.com")
         
-        print(f"Elaborazione: {title}")
-        
-        # Cerchiamo di prendere l'immagine reale che Google News associa all'articolo
-        source_img_url = None
-        if "media_content" in entry:
-            source_img_url = entry.media_content[0].get("url")
-        elif "links" in entry:
-            for l in entry.links:
-                if "image" in l.get("type", ""):
-                    source_img_url = l.get("href")
-                    break
+        print(f"Elaborazione {i+1}: {title}")
 
-        image_stream = None
-        if source_img_url:
-            try:
-                # Il server scarica l'immagine REALE della notizia
-                img_res = requests.get(source_img_url, headers=HEADERS, timeout=10)
-                if img_res.status_code == 200:
-                    image_stream = io.BytesIO(img_res.content)
-            except:
-                pass
-
-        # Se non c'è l'immagine o il download fallisce, usa la riserva interna vuota
-        if not image_stream:
-            image_stream = create_fallback_image()
-            
-        image_stream.name = "thumbnail.jpg"
-        message = f"🔥 *{title}*\n\n👉 *Leggi la notizia completa qui:* {link}\n\n#onepiece #anime #manga"
+        # Costruiamo il post. Mettendo il link come prima cosa, Telegram
+        # genererà AUTOMATICAMENTE la grande anteprima con la foto reale dell'articolo.
+        message = f"📰 *{title}*\n\n👉 *Continua a leggere la notizia su:* {link}\n\n#onepiece #anime #manga"
         
         try:
-            # Invio del file binario scaricato. Telegram DEVE accettarlo perché è un file locale, non un link.
-            await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message, parse_mode="Markdown")
-            print(" -> Inviato!")
+            # Inviamo un messaggio di testo abilitando l'anteprima web con foto grande
+            await bot.send_message(
+                chat_id=CHAT_ID, 
+                text=message, 
+                parse_mode="Markdown",
+                disable_web_page_preview=False # Questo forza Telegram a mostrare la foto reale della fonte!
+            )
+            print(" -> Post inviato con anteprima fotografica automatica!")
             
             with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{make_id(title)}\n")
@@ -94,9 +67,9 @@ async def main():
             new_posts_counter += 1
             await asyncio.sleep(4)
         except Exception as e:
-            print(f" -> Errore d'invio definitivo: {e}")
+            print(f" -> Errore d'invio: {e}")
 
-    print(f"Fine. Inviati: {new_posts_counter}")
+    print(f"\nFine sessione. Inviati: {new_posts_counter}")
 
 if __name__ == "__main__":
     asyncio.run(main())
