@@ -20,7 +20,7 @@ jobs:
 
     - name: Installa dipendenze
       run: |
-        pip install python-telegram-bot feedparser requests
+        pip install python-telegram-bot feedparser requests pillow
 
     - name: Esegui lo Script Bot
       env:
