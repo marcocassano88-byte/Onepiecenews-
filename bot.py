@@ -1,9 +1,9 @@
 import os
 import time
 import hashlib
+import random
 import feedparser
 import requests
-from bs4 import BeautifulSoup
 from telegram import Bot
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -11,6 +11,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 bot = Bot(token=BOT_TOKEN)
 
+# 🔥 RSS RESTA IDENTICO (come volevi)
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 
 posted = set()
@@ -18,47 +19,118 @@ posted = set()
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
-# 🔥 immagine dal link
-def get_image_from_page(url):
+# 🔥 ricerca immagini online
+def search_image(query):
     try:
+        url = f"https://duckduckgo.com/?q={query}&iax=images&ia=images"
         headers = {"User-Agent": "Mozilla/5.0"}
+
         r = requests.get(url, headers=headers, timeout=10)
 
-        soup = BeautifulSoup(r.text, "html.parser")
+        import re
+        imgs = re.findall(r'"image":"(.*?)"', r.text)
 
-        img = soup.find("meta", property="og:image")
-        if img and img.get("content"):
-            return img["content"]
-
-        img = soup.find("meta", property="twitter:image")
-        if img and img.get("content"):
-            return img["content"]
-
+        if imgs:
+            return random.choice(imgs)
     except:
         pass
 
     return None
 
-# 🔥 generatore hashtag automatico
+# 🔥 immagini per personaggio + fallback intelligente
+def get_character_image(title):
+    title = title.lower()
+
+    characters = {
+        "luffy": "luffy one piece",
+        "zoro": "zoro one piece",
+        "nami": "nami one piece",
+        "usopp": "usopp one piece",
+        "sanji": "sanji one piece",
+        "chopper": "chopper one piece",
+        "robin": "nico robin one piece",
+        "franky": "franky one piece",
+        "brook": "brook one piece",
+        "jimbei": "jinbe one piece",
+
+        "law": "trafalgar law one piece",
+        "kid": "eustass kid one piece",
+        "sabo": "sabo one piece",
+        "yamato": "yamato one piece",
+
+        "shanks": "shanks one piece",
+        "buggy": "buggy one piece",
+        "blackbeard": "blackbeard one piece",
+        "teach": "blackbeard one piece",
+        "whitebeard": "whitebeard one piece",
+        "kaido": "kaido one piece",
+        "big mom": "big mom one piece",
+        "roger": "gol d roger one piece",
+
+        "akainu": "akainu one piece",
+        "aokiji": "aokiji one piece",
+        "kizaru": "kizaru one piece",
+        "garp": "garp one piece",
+        "sengoku": "sengoku one piece",
+        "imu": "imu one piece",
+
+        "dragon": "dragon one piece",
+        "mihawk": "mihawk one piece",
+        "crocodile": "crocodile one piece",
+        "doflamingo": "doflamingo one piece",
+        "hancock": "boa hancock one piece",
+
+        "gear 5": "gear 5 luffy one piece",
+        "joy boy": "joy boy one piece",
+        "nika": "nika luffy one piece",
+
+        # LIVE ACTION NETFLIX
+        "live action luffy": "one piece netflix luffy",
+        "live action zoro": "one piece netflix zoro",
+        "live action nami": "one piece netflix nami",
+        "live action sanji": "one piece netflix sanji",
+        "live action usopp": "one piece netflix usopp",
+        "live action garp": "one piece netflix garp",
+        "live action buggy": "one piece netflix buggy",
+        "live action mihawk": "one piece netflix mihawk"
+    }
+
+    for key, query in characters.items():
+        if key in title:
+            return search_image(query)
+
+    # 🎲 fallback random controllato
+    fallback = [
+        "one piece luffy",
+        "one piece zoro",
+        "one piece shanks",
+        "one piece gear 5",
+        "one piece anime",
+        "one piece manga"
+    ]
+
+    return search_image(random.choice(fallback))
+
+# 🔥 HASHTAG AUTOMATICI
 def generate_hashtags(title):
     title = title.lower()
 
-    hashtags = ["#onepiece", "#anime", "#manga"]
+    tags = ["#onepiece", "#anime", "#manga"]
 
     if "luffy" in title:
-        hashtags.append("#luffy")
+        tags.append("#luffy")
     if "zoro" in title:
-        hashtags.append("#zoro")
+        tags.append("#zoro")
     if "shanks" in title:
-        hashtags.append("#shanks")
-    if "gear 5" in title or "gear5" in title:
-        hashtags.append("#gear5")
+        tags.append("#shanks")
+    if "gear 5" in title:
+        tags.append("#gear5")
     if "imu" in title:
-        hashtags.append("#imu")
+        tags.append("#imu")
     if "wano" in title:
-        hashtags.append("#wano")
+        tags.append("#wano")
 
-    return " ".join(hashtags)
+    return " ".join(tags)
 
 while True:
     feed = feedparser.parse(RSS_FEED)
@@ -74,7 +146,7 @@ while True:
 
         posted.add(uid)
 
-        image = get_image_from_page(link)
+        image = get_character_image(title)
 
         if not image:
             image = "https://i.imgur.com/8Km9tLL.jpg"
