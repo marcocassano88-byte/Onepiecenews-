@@ -2,6 +2,8 @@ import os
 import time
 import hashlib
 import feedparser
+import requests
+from bs4 import BeautifulSoup
 from telegram import Bot
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -16,6 +18,21 @@ posted = set()
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
+def get_image_from_page(url):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        img = soup.find("meta", property="og:image")
+        if img:
+            return img["content"]
+
+    except:
+        pass
+
+    return None
+
 while True:
     feed = feedparser.parse(RSS_FEED)
 
@@ -24,16 +41,25 @@ while True:
         link = entry.link
 
         uid = make_id(title)
-
         if uid in posted:
             continue
 
         posted.add(uid)
 
+        image = get_image_from_page(link)
+
+        if not image:
+            image = "https://i.imgur.com/8Km9tLL.jpg"
+
         message = f"🔥 {title}\n\n👉 Fonte: {link}"
 
         try:
-            bot.send_message(chat_id=CHAT_ID, text=message)
+            bot.send_photo(
+                chat_id=CHAT_ID,
+                photo=image,
+                caption=message
+            )
+
             print("POST:", title)
 
         except Exception as e:
@@ -41,5 +67,4 @@ while True:
 
         time.sleep(25)
 
-    print("Attendo nuovi articoli...")
     time.sleep(300)
