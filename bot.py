@@ -21,8 +21,8 @@ GALLERY = {
         "https://i.imgur.com/M6XwX8F.jpeg"   # Logo Netflix Anime
     ],
     "live_action": [
-        "https://i.imgur.com/eb8f6d13.jpeg", # Cast Live Action Season 1/2
-        "https://i.imgur.com/5fe0e904.jpeg"  # Going Merry Netflix version
+        "https://i.imgur.com/W1Xz68m.jpeg", # Cast Live Action (Sostituito temporaneamente con link stabile)
+        "https://i.imgur.com/y8XmQwL.jpeg"  # Logo One Piece
     ],
     "milano": [
         "https://i.imgur.com/uKFb71w.jpeg"   # Pop up store / Milano evento
@@ -33,18 +33,17 @@ GALLERY = {
     ],
     "zoro": [
         "https://i.imgur.com/6W6kE6X.jpeg",  # Zoro combattimento
-        "https://i.imgur.com/vHbcw7X.jpeg"   # Zoro stile Wano
+        "https://i.imgur.com/W1Xz68m.jpeg"   # Sfondo Ciurma
     ],
     "sanji": [
         "https://i.imgur.com/2X8P3mG.jpeg",  # Sanji Ifrit Jambe
-        "https://i.imgur.com/Qk9bYwM.jpeg"   # Sanji fumo
+        "https://i.imgur.com/y8XmQwL.jpeg"   # Logo
     ],
     "nami_robin": [
-        "https://i.imgur.com/pZ6X8Kz.jpeg"   # Ragazze della ciurma / Archeologia e mappe
+        "https://i.imgur.com/8Xb3GZM.jpeg"   # Poster
     ],
     "imu_governo": [
-        "https://i.imgur.com/tY7wK8p.jpeg",  # Imu sul Trono Vuoto / Gorosei
-        "https://i.imgur.com/bM9Wz4m.jpeg"   # Simbolo Governo Mondiale
+        "https://i.imgur.com/uKFb71w.jpeg"   # Alternativa stabile
     ],
     "generiche": [
         "https://i.imgur.com/W1Xz68m.jpeg",  # Ciurma intera sulla Thousand Sunny
@@ -53,7 +52,6 @@ GALLERY = {
     ]
 }
 
-# Oltre 100 parole chiave categorizzate per intercettare qualsiasi notizia
 KEYWORDS_MAP = {
     "netflix": [
         "netflix", "remake", "wit studio", "the one piece", "wit", "serie tv", "streaming", "episodi", "puntate"
@@ -62,7 +60,7 @@ KEYWORDS_MAP = {
         "live action", "live-action", "iñaki godoy", "inaki godoy", "mackenyu", "taz skylar", "emily rudd", 
         "jacob romero", "matt owens", "stagione 2", "season 2", "attori", "cast", "steven maeda", "alvida", 
         "buggy", "arlong", "garp", "koby", "helmeppo", "marina", "smoker", "loguetown", "crocus", "laboon", 
-        "vivi", "chopper", "robin", "baroque works", "mr 3", "miss wednesday", "w组织"
+        "vivi", "chopper", "robin", "baroque works", "mr 3", "miss wednesday"
     ],
     "milano": [
         "milano", "pop-up", "store", "duomo", "mondadori", "piazza duomo", "evento", "italia", "caccia al tesoro", "negozio"
@@ -96,17 +94,12 @@ def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
 def select_best_image(title):
-    """Scansiona il titolo cercando una corrispondenza tra le oltre 100 parole chiave."""
     t = title.lower()
-    
-    # Controlla ogni categoria definita nelle parole chiave
     for category, keywords in KEYWORDS_MAP.items():
         for keyword in keywords:
             if keyword in t:
-                print(f"Parola chiave trovata: '{keyword}' -> Categoria: {category}")
                 return random.choice(GALLERY[category])
-                
-    # Fallback su immagini generiche mozzafiato
+    # Se non trova parole chiave speciali, restituisce una generica (EVITA lo 0 post)
     return random.choice(GALLERY["generiche"])
 
 def hashtags(title):
@@ -114,20 +107,19 @@ def hashtags(title):
     tags = ["#onepiece", "#anime", "#manga"]
     if "luffy" in t or "rufy" in t: tags.append("#luffy")
     if "netflix" in t: tags.append("#netflix")
-    if "live" in t: tags.append("#onepieceliveaction")
     if "milano" in t: tags.append("#onepiecemilano")
-    if "zoro" in t: tags.append("#zoro")
-    if "sanji" in t: tags.append("#sanji")
     return " ".join(tags)
 
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
-        print("Errore: Credenziali mancanti nelle variabili d'ambiente.")
+        print("Errore: Credenziali mancanti.")
         return
 
     bot = Bot(token=BOT_TOKEN)
     feed = feedparser.parse(RSS_FEED)
     new_posts_counter = 0
+
+    print(f"Trovati {len(feed.entries)} articoli nel feed RSS.")
 
     for entry in feed.entries[:10]:
         title = entry.title
@@ -135,11 +127,10 @@ async def main():
         uid = make_id(title)
 
         if uid in posted:
+            print(f"Saltato (già pubblicato in precedenza): {title}")
             continue
 
-        print(f"\nAnalisi notizia: {title}")
-        
-        # Selezione intelligente dell'immagine tramite il super dizionario
+        print(f"Elaborazione: {title}")
         img_url = select_best_image(title)
         
         try:
@@ -151,7 +142,7 @@ async def main():
                 message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
                 
                 await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message)
-                print(f"Post inviato correttamente!")
+                print(f"Inviato!")
                 
                 posted.add(uid)
                 with open(HISTORY_FILE, "a", encoding="utf-8") as f:
@@ -160,11 +151,12 @@ async def main():
                 new_posts_counter += 1
                 await asyncio.sleep(5)
             else:
-                print(f"Errore download immagine galleria: {img_res.status_code}")
+                print(f"Errore download immagine: {img_res.status_code}")
         except Exception as e:
-            print(f"Errore invio Telegram: {e}")
+            print(f"Errore Telegram: {e}")
 
-    print(f"\nTask terminato. Post pubblicati in questa sessione: {new_posts_counter}")
+    print(f"Fine. Nuovi post pubblicati: {new_posts_counter}")
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
