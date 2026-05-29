@@ -11,7 +11,7 @@ from telegram import Bot
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# LE 5 FONTI ITALIANE PER IL RIEMPIMENTO
+# 5 FONTI ITALIANE
 ACCOUNT_X = ["OP_Spoiler_IT", "OnePiece_It", "OPLiveActionIT", "BikeAndRaft", "OnePieceItalia"]
 
 HISTORY_FILE = "posted_urls.txt"
@@ -21,11 +21,14 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 }
 
-def is_spam(text):
-    # Filtro anti-spam: ignora live Twitch/YouTube, ma permette news sul Live Action
-    spam_keywords = ["twitch", "stasera", "youtube", "iscriviti", "seguimi", "diretta"]
+def is_spam(text, link):
+    spam_keywords = ["twitch", "stasera", "youtube", "iscriviti", "seguimi", "diretta", "fb.me"]
     text_lower = text.lower()
-    return any(keyword in text_lower for keyword in spam_keywords)
+    if any(keyword in text_lower for keyword in spam_keywords) or "facebook.com" in link or "fb.me" in link:
+        return True
+    if len(text.strip()) < 10:
+        return True
+    return False
 
 def clean_tweets_text(text):
     if not text: return ""
@@ -45,8 +48,7 @@ def download_x_image(feed_entry):
             if img_res.status_code == 200:
                 with open(TEMP_IMAGE, "wb") as f: f.write(img_res.content)
                 return TEMP_IMAGE
-    except Exception as e:
-        print(f" -> Errore download immagine: {e}")
+    except: return None
     return None
 
 async def main():
@@ -57,26 +59,26 @@ async def main():
             posted_ids = set(line.strip() for line in f)
 
     total_uploaded = 0
-    TARGET_POSTS = 50 # OBIETTIVO: 50 POST
+    TARGET_POSTS = 50 
 
     for username in ACCOUNT_X:
         if total_uploaded >= TARGET_POSTS: break
             
-        print(f"--- FASE DI RIEMPIMENTO: @{username} ---")
+        print(f"--- FASE DI RIEMPIMENTO FORZATO: @{username} ---")
         rss_url = f"https://nitter.net/{username}/rss"
-        
         try:
             response = requests.get(rss_url, headers=HEADERS, timeout=15)
             feed = feedparser.parse(response.text)
         except: continue
 
-        # Analizziamo fino a 30 post per fonte per assicurare il raggiungimento dei 50
-        for entry in feed.entries[:30]: 
+        # Aumentato a 60 per garantirci i 50 post totali richiesti
+        for entry in feed.entries[:60]:
             if total_uploaded >= TARGET_POSTS: break
             
             title = entry.get("title", "")
             link = entry.get("link", "")
-            if not title or is_spam(title): continue
+            
+            if not title or is_spam(title, link): continue
                 
             uid = hashlib.md5(link.encode('utf-8')).hexdigest()
             if uid in posted_ids: continue
@@ -100,11 +102,8 @@ async def main():
                 with open(HISTORY_FILE, "a", encoding="utf-8") as f: f.write(f"{uid}\n")
                 posted_ids.add(uid)
                 total_uploaded += 1
-                
-                # Attesa breve per non superare i limiti di Telegram durante il riempimento
-                await asyncio.sleep(3) 
-            except Exception as e:
-                print(f"Errore invio: {e}")
+                await asyncio.sleep(2) # Ridotto attesa per velocizzare il riempimento
+            except: continue
 
     print(f"\n[FINE] Riempimento completato. Post totali inviati: {total_uploaded}")
 
