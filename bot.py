@@ -72,3 +72,70 @@ def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
 def select_best_image(title):
+    t = title.lower()
+    for category, keywords in KEYWORDS_MAP.items():
+        for keyword in keywords:
+            if keyword in t:
+                return random.choice(GALLERY[category])
+    return random.choice(GALLERY["generiche"])
+
+def hashtags(title):
+    t = title.lower()
+    tags = ["#onepiece", "#anime", "#manga"]
+    if "luffy" in t or "rufy" in t: tags.append("#luffy")
+    if "netflix" in t: tags.append("#netflix")
+    if "milano" in t: tags.append("#onepiecemilano")
+    if "zoro" in t: tags.append("#zoro")
+    if "sanji" in t: tags.append("#sanji")
+    return " ".join(tags)
+
+async def main():
+    if not BOT_TOKEN or not CHAT_ID:
+        print("Errore: Credenziali mancanti.")
+        return
+
+    bot = Bot(token=BOT_TOKEN)
+    feed = feedparser.parse(RSS_FEED)
+    new_posts_counter = 0
+
+    print(f"Trovati {len(feed.entries)} articoli nel feed RSS.")
+
+    for entry in feed.entries[:10]:
+        title = entry.title
+        link = entry.link
+        uid = make_id(title)
+
+        # === FORZATURA RESET (RIATTIVAMI DOPO IL PRIMO AVVIO) ===
+        # if uid in posted:
+        #     print(f"Saltato: {title}")
+        #     continue
+
+        print(f"Elaborazione: {title}")
+        img_url = select_best_image(title)
+        
+        try:
+            img_res = requests.get(img_url, timeout=10)
+            if img_res.status_code == 200:
+                image_stream = io.BytesIO(img_res.content)
+                image_stream.name = "one_piece_news.jpg"
+                
+                message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
+                
+                await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message)
+                print(f"Inviato!")
+                
+                posted.add(uid)
+                with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                    f.write(f"{uid}\n")
+                    
+                new_posts_counter += 1
+                await asyncio.sleep(5)
+            else:
+                print(f"Errore download immagine: {img_res.status_code}")
+        except Exception as e:
+            print(f"Errore Telegram: {e}")
+
+    print(f"Fine. Nuovi post pubblicati: {new_posts_counter}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
