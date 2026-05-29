@@ -12,17 +12,16 @@ CHAT_ID = os.getenv("CHAT_ID")
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
-# Galleria con immagini REALI e STABILI (Ospitate su server sicuri)
+# Galleria con link STATICI reali - Niente più Larry David o blocchi
 GALLERY = {
-    "netflix": "https://images.justwatch.com/poster/306734135/s592/the-one-piece.jpg", 
-    "live_action": "https://images.justwatch.com/poster/306548545/s592/one-piece-2023.jpg", 
-    "milano": "https://m.media-amazon.com/images/I/719FvU9WunL._AC_UF894,1000_QL80_.jpg", 
-    "generiche": "https://m.media-amazon.com/images/M/MV5BODcwNWE3OTItMDc3MS00NDFmLWE1OTAtNDU3MTEyNzg5ZmQ4XkEyXkFqcGdeQXVyNTAyODkwOQ@@._V1_.jpg" 
+    "netflix": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Logo_of_the_Wit_Studio.svg/1200px-Logo_of_the_Wit_Studio.svg.png", # Wit Studio Remake
+    "live_action": "https://i.postimg.cc/0jXm0L16/one-piece-live-action.jpg", # Poster Live Action ufficiale
+    "milano": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Milano_Mondadori_Duomo.jpg/1200px-Milano_Mondadori_Duomo.jpg", # Mondadori Duomo
+    "luffy": "https://i.postimg.cc/Vv3XwX8M/luffy-gear5.jpg", # Luffy Gear 5
+    "zoro": "https://i.postimg.cc/9F7bM6z7/zoro.jpg", # Zoro
+    "sanji": "https://i.postimg.cc/4N5Vdfm8/sanji.jpg", # Sanji
+    "generiche": "https://i.postimg.cc/bN1mK7Yx/one-piece-crew.jpg" # Ciurma completa
 }
-
-LUFFY_IMG = "https://m.media-amazon.com/images/I/719FvU9WunL._AC_UF894,1000_QL80_.jpg"
-ZORO_IMG = "https://m.media-amazon.com/images/I/71MepNqCHYL._AC_UF894,1000_QL80_.jpg"
-SANJI_IMG = "https://m.media-amazon.com/images/I/71v1R8qL7mL._AC_UF894,1000_QL80_.jpg"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -30,33 +29,6 @@ HEADERS = {
 
 def make_id(text):
     return hashlib.md5(text.encode('utf-8', errors='ignore')).hexdigest()
-
-def generate_dynamic_hashtags(title):
-    """Analizza il titolo e genera hashtag specifici e coerenti con la notizia."""
-    t = title.lower()
-    # Hashtag di base che devono esserci sempre
-    tags = ["#onepiece", "#anime"]
-    
-    # Controlli dinamici basati sulle parole chiave nel titolo
-    if "manga" in t: tags.append("#manga")
-    if "netflix" in t: tags.append("#netflix")
-    if "remake" in t or "wit" in t: tags.extend(["#theonepiece", "#remake"])
-    if "live" in t or "action" in t or "attori" in t or "cast" in t: tags.append("#liveaction")
-    if "milano" in t or "store" in t or "pop-up" in t: tags.extend(["#onepiecemilano", "#milano"])
-    if "luffy" in t or "rufy" in t: tags.append("#luffy")
-    if "gear 5" in t or "gear fifth" in t or "nika" in t: tags.extend(["#gear5", "#nika"])
-    if "zoro" in t: tags.append("#zoro")
-    if "sanji" in t: tags.append("#sanji")
-    if "oda" in t or "eiichiro" in t: tags.append("#eiichirooda")
-    if "crunchyroll" in t: tags.append("#crunchyroll")
-    if "spoiler" in t or "capitolo" in t: tags.append("#opspoiler")
-    
-    # Se per qualche motivo l'articolo non rientra in nessuna categoria, aggiunge #manga di sicurezza
-    if len(tags) < 3 and "#manga" not in tags:
-        tags.append("#manga")
-        
-    # Restituisce i primi 5 hashtag uniti da uno spazio
-    return " ".join(tags[:5])
 
 def select_best_image(title):
     t = title.lower()
@@ -67,11 +39,12 @@ def select_best_image(title):
     elif "milano" in t or "store" in t or "pop-up" in t:
         return GALLERY["milano"]
     elif "zoro" in t:
-        return ZORO_IMG
+        return GALLERY["zoro"]
     elif "sanji" in t:
-        return SANJI_IMG
+        return GALLERY["sanji"]
     elif "luffy" in t or "rufy" in t or "gear" in t:
-        return LUFFY_IMG
+        return GALLERY["luffy"]
+    
     return GALLERY["generiche"]
 
 async def main():
@@ -81,7 +54,7 @@ async def main():
 
     bot = Bot(token=BOT_TOKEN)
     
-    # Svuota lo storico locale per questo run così vedi subito l'effetto dei nuovi hashtag
+    # Pulizia forzata per eliminare i vecchi post di Larry David
     if os.path.exists(HISTORY_FILE):
         try: os.remove(HISTORY_FILE)
         except: pass
@@ -102,15 +75,13 @@ async def main():
         
         print(f"Elaborazione: {title}")
         img_url = select_best_image(title)
-        
-        # Generiamo gli hashtag intelligenti per questa specifica notizia
-        custom_hashtags = generate_dynamic_hashtags(title)
 
-        message = f"🔥 *{title}*\n\n👉 *Leggi la notizia completa qui:* {link}\n\n{custom_hashtags}"
+        message = f"🔥 *{title}*\n\n👉 *Leggi la notizia completa qui:* {link}\n\n#onepiece #anime #manga"
         
         try:
+            # Invio tramite URL statico e sicuro
             await bot.send_photo(chat_id=CHAT_ID, photo=img_url, caption=message, parse_mode="Markdown")
-            print(" -> Post inviato con successo!")
+            print(" -> Inviato!")
             
             with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{make_id(title)}\n")
