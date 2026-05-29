@@ -5,22 +5,12 @@ import feedparser
 import requests
 from telegram import Bot
 
-# Configurazione credenziali
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
+# Nuovo feed italiano stabile e senza blocchi anti-bot
+RSS_FEED = "https://www.animeclick.it/rss/anime"
 HISTORY_FILE = "posted_urls.txt"
-
-# DATABASE FILE ID INTERNI DI TELEGRAM (Zero link web, zero blocchi)
-# Nota: Ho inserito degli ID reali di prova standard accettati dal sistema.
-GALLERY = {
-    "netflix": "AgACAgQAAxkBAAEK9lhly2M1Z3X8X2o_W3VvO1HwAAEGbAAC_rYxG_vEwFI_m8_H0gABgQEAAwIAA3MAAx4E",
-    "live_action": "AgACAgQAAxkBAAEK9lhly2M1Z3X8X2o_W3VvO1HwAAEGbAAC_rYxG_vEwFI_m8_H0gABgQEAAwIAA3MAAx4E",
-    "milano": "AgACAgQAAxkBAAEK9lhly2M1Z3X8X2o_W3VvO1HwAAEGbAAC_rYxG_vEwFI_m8_H0gABgQEAAwIAA3MAAx4E",
-    "luffy": "AgACAgQAAxkBAAEK9lhly2M1Z3X8X2o_W3VvO1HwAAEGbAAC_rYxG_vEwFI_m8_H0gABgQEAAwIAA3MAAx4E",
-    "generiche": "AgACAgQAAxkBAAEK9lhly2M1Z3X8X2o_W3VvO1HwAAEGbAAC_rYxG_vEwFI_m8_H0gABgQEAAwIAA3MAAx4E"
-}
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -29,18 +19,6 @@ HEADERS = {
 def make_id(text):
     return hashlib.md5(text.encode('utf-8', errors='ignore')).hexdigest()
 
-def select_best_image(title):
-    t = title.lower()
-    if "netflix" in t or "remake" in t or "wit" in t:
-        return GALLERY["netflix"]
-    elif "live" in t or "action" in t or "attori" in t:
-        return GALLERY["live_action"]
-    elif "milano" in t or "store" in t or "pop-up" in t:
-        return GALLERY["milano"]
-    elif "luffy" in t or "rufy" in t or "gear" in t:
-        return GALLERY["luffy"]
-    return GALLERY["generiche"]
-
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
         print("Errore: Credenziali mancanti.")
@@ -48,44 +26,64 @@ async def main():
 
     bot = Bot(token=BOT_TOKEN)
     
-    # Svuota lo storico precedente per consentire il re-invio immediato di test
+    posted = set()
     if os.path.exists(HISTORY_FILE):
-        try: os.remove(HISTORY_FILE)
-        except: pass
+        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            posted = set(line.strip() for line in f if line.strip())
 
+    print("Scaricamento feed AnimeClick...")
     try:
         response = requests.get(RSS_FEED, headers=HEADERS, timeout=15)
         feed = feedparser.parse(response.text)
     except Exception as e:
-        print(f"Errore feed: {e}")
+        print(f"Errore download feed: {e}")
         return
 
-    print(f"Articoli trovati: {len(feed.entries)}")
+    if not feed.entries:
+        print("Impossibile leggere il feed.")
+        return
+
+    print(f"Trovati {len(feed.entries)} articoli generali.")
     new_posts_counter = 0
 
-    for i, entry in enumerate(feed.entries[:5]):
-        title = entry.get("title", "Nuova notizia One Piece")
-        link = entry.get("link", "https://news.google.com")
+    for entry in feed.entries:
+        title = entry.get("title", "")
+        link = entry.get("link", "")
         
-        print(f"Elaborazione: {title}")
-        photo_id = select_best_image(title)
+        # Filtro stringente: pubblichiamo solo se si parla di One Piece
+        if "one piece" not in title.lower():
+            continue
+            
+        uid = make_id(title)
 
-        message = f"🔥 *{title}*\n\n👉 *Leggi la notizia completa qui:* {link}\n\n#onepiece #anime #manga"
+        if uid in posted:
+            continue
+
+        print(f"Trovata nuova notizia: {title}")
+        message = f"🔥 *{title}*\n\n👉 *Leggi i dettagli su AnimeClick:*\n{link}\n\n#onepiece #anime #manga"
         
         try:
-            # Invio nativo tramite ID risorsa interno a Telegram
-            await bot.send_photo(chat_id=CHAT_ID, photo=photo_id, caption=message, parse_mode="Markdown")
-            print(" -> Inviato con successo via File ID!")
+            await bot.send_message(
+                chat_id=CHAT_ID, 
+                text=message, 
+                parse_mode="Markdown",
+                disable_web_page_preview=False
+            )
+            print(" -> Inviato!")
             
             with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-                f.write(f"{make_id(title)}\n")
+                f.write(f"{uid}\n")
                 
             new_posts_counter += 1
-            await asyncio.sleep(4)
+            await asyncio.sleep(5)
+            
+            if new_posts_counter >= 3: # Limite di sicurezza per run
+                break
+                
         except Exception as e:
             print(f" -> Errore d'invio: {e}")
 
-    print(f"Fine. Inviati: {new_posts_counter}")
+    print(f"Fine. Nuovi post pubblicati: {new_posts_counter}")
 
 if __name__ == "__main__":
     asyncio.run(main())
