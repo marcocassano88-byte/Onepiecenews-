@@ -6,7 +6,7 @@ import requests
 from telegram import Bot
 import io
 import re
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 # Configurazione credenziali
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -15,6 +15,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
+# User-Agent reale per evitare che i siti di news blocchino il bot
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
@@ -61,18 +62,17 @@ def get_real_article_image(google_rss_link):
 
 def generate_news_card(title):
     """Crea un'immagine personalizzata con il titolo se non viene trovata un'immagine reale."""
-    # Sfondo sfumato scuro o rosso stile One Piece
     img = Image.new("RGB", (800, 450), color="#1a1a1a")
     d = ImageDraw.Draw(img)
     
-    # Decorazione estetica bordi
+    # Decorazione estetica bordi (Stile One Piece scuro/arancio)
     d.rectangle([(15, 15), (785, 435)], outline="#E74C3C", width=4)
     d.rectangle([(25, 25), (775, 425)], outline="#F39C12", width=2)
     
     # Tag del canale in alto
     d.text((40, 40), "ONE PIECE ITALIA NEWS", fill="#F39C12")
     
-    # Spezza il titolo per farlo stare nell'immagine
+    # Spezza il titolo per farlo stare nell'immagine senza font esterni
     words = title.split()
     lines = []
     current_line = []
@@ -84,7 +84,7 @@ def generate_news_card(title):
             current_line.append(word)
     lines.append(" ".join(current_line))
     
-    # Scrivi il testo centrato (usa il font di default del sistema)
+    # Scrivi il testo riga per riga
     y_text = 150
     for line in lines[:5]:
         d.text((50, y_text), line, fill="#FFFFFF")
@@ -118,8 +118,9 @@ async def main():
         link = entry.link
         uid = make_id(title)
 
-        if uid in posted:
-            continue
+        # ⚠️ MODIFICA DI TEST: Commentato temporaneamente per forzare l'invio dei post vecchi
+        # if uid in posted:
+        #     continue
 
         print(f"Elaborazione: {title}")
         
@@ -127,7 +128,7 @@ async def main():
         image_stream = get_real_article_image(link)
         is_failsafe = False
         
-        # Se fallisce, genera la copertina con il titolo scritto sopra
+        # Se fallisce, genera la copertina grafica con il titolo scritto sopra
         if not image_stream:
             print(f"Immagine nativa non trovata. Genero copertina grafica.")
             image_stream = generate_news_card(title)
@@ -138,7 +139,7 @@ async def main():
         try:
             image_stream.name = "news_image.jpg" if not is_failsafe else "news_card.jpg"
             await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message)
-            print(f"Pubblicato: {title}")
+            print(f"Pubblicato con successo: {title}")
             
             posted.add(uid)
             with open(HISTORY_FILE, "a", encoding="utf-8") as f:
@@ -150,7 +151,8 @@ async def main():
         except Exception as e:
             print(f"Errore invio: {e}")
 
-    print(f"Fine sessione. Nuovi post: {new_posts_counter}")
+    print(f"Fine sessione. Nuovi post pubblicati: {new_posts_counter}")
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
