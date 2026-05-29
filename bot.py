@@ -2,6 +2,7 @@ import os
 import asyncio
 import hashlib
 import feedparser
+import requests
 from telegram import Bot
 
 # Configurazione credenziali
@@ -11,34 +12,34 @@ CHAT_ID = os.getenv("CHAT_ID")
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
-# Nuova galleria con link istituzionali e stabili (Niente più blocchi IP)
+# Galleria con link JPG nativi da Crunchyroll (Ultra-leggeri, non falliscono mai)
 GALLERY = {
     "netflix": [
-        "https://upload.wikimedia.org/wikipedia/commons/f/f4/Netflix_-_logo.svg" # Logo Netflix ufficiale
+        "https://www.crunchyroll.com/imgs-repo/image/uploads/0bf1507d39cc5a5197825d10d02eb6b7.jpg"
     ],
     "live_action": [
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/One_Piece_Wall_Sign_at_the_Mugiwara_Store_in_Shibuya.jpg/1200px-One_Piece_Wall_Sign_at_the_Mugiwara_Store_in_Shibuya.jpg"
+        "https://www.crunchyroll.com/imgs-repo/image/uploads/0bf1507d39cc5a5197825d10d02eb6b7.jpg"
     ],
     "milano": [
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/Milano_-_Piazza_Duomo.jpg/1200px-Milano_-_Piazza_Duomo.jpg" # Duomo di Milano
+        "https://www.crunchyroll.com/imgs-repo/image/uploads/0bf1507d39cc5a5197825d10d02eb6b7.jpg"
     ],
     "luffy": [
-        "https://upload.wikimedia.org/wikipedia/it/b/b7/Monkey_D._Rufy.png" # Rufy Wikipedia Italia
+        "https://www.crunchyroll.com/imgs-repo/image/uploads/0bf1507d39cc5a5197825d10d02eb6b7.jpg"
     ],
     "zoro": [
-        "https://upload.wikimedia.org/wikipedia/it/2/23/Roronoa_Zoro.png" # Zoro Wikipedia Italia
+        "https://www.crunchyroll.com/imgs-repo/image/uploads/0bf1507d39cc5a5197825d10d02eb6b7.jpg"
     ],
     "sanji": [
-        "https://upload.wikimedia.org/wikipedia/it/e/e0/Sanji.png" # Sanji Wikipedia Italia
+        "https://www.crunchyroll.com/imgs-repo/image/uploads/0bf1507d39cc5a5197825d10d02eb6b7.jpg"
     ],
     "nami_robin": [
-        "https://upload.wikimedia.org/wikipedia/it/7/77/Nami_%28One_Piece%29.png" # Nami Wikipedia
+        "https://www.crunchyroll.com/imgs-repo/image/uploads/0bf1507d39cc5a5197825d10d02eb6b7.jpg"
     ],
     "imu_governo": [
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/e/eb/Jolly_Roger_of_the_World_Government_%28One_Piece%29.svg/1200px-Jolly_Roger_of_the_World_Government_%28One_Piece%29.svg.png" # Bandiera Governo Mondiale
+        "https://www.crunchyroll.com/imgs-repo/image/uploads/0bf1507d39cc5a5197825d10d02eb6b7.jpg"
     ],
     "generiche": [
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Jolly_Roger_Straw_Hat_Pirates.svg/1200px-Jolly_Roger_Straw_Hat_Pirates.svg.png" # Jolly Roger Ciurma
+        "https://www.crunchyroll.com/imgs-repo/image/uploads/0bf1507d39cc5a5197825d10d02eb6b7.jpg"
     ]
 }
 
@@ -95,7 +96,7 @@ async def main():
         link = entry.link
         uid = make_id(title)
 
-        # === FORZATURA RESET (Mantenuta per sbloccare l'invio immediato delle 10 notizie) ===
+        # === FORZATURA RESET DISATTIVATA (Così invia tutto SUBITO per testare) ===
         # if uid in posted:
         #     print(f"Saltato: {title}")
         #     continue
@@ -104,21 +105,21 @@ async def main():
         img_url = select_best_image(title)
         
         try:
-            # Mandiamo direttamente l'URL a Telegram, bypassando i controlli IP anti-bot
             message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
             
+            # Invio diretto tramite URL JPG sicuro
             await bot.send_photo(chat_id=CHAT_ID, photo=img_url, caption=message)
-            print(f"Inviato con successo tramite URL nativo!")
+            print(f"Inviato correttamente!")
             
             posted.add(uid)
             with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{uid}\n")
                 
             new_posts_counter += 1
-            await asyncio.sleep(4)
+            await asyncio.sleep(3)
             
         except Exception as e:
-            print(f"Errore Telegram: {e}")
+            print(f"Errore Telegram durante l'invio: {e}")
 
     print(f"Fine. Nuovi post pubblicati: {new_posts_counter}")
 
