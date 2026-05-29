@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import telegram
 import os
 import time
+import random
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -15,12 +16,13 @@ articles = [
     "https://www.onepiece.it"
 ]
 
-posted = 0
+posted_titles = set()
 
 for site in articles:
 
     try:
         r = requests.get(site, timeout=10)
+
         soup = BeautifulSoup(r.text, "html.parser")
 
         links = soup.find_all("a")
@@ -39,43 +41,39 @@ for site in articles:
             if len(title) < 20:
                 continue
 
-            image = None
+            if title in posted_titles:
+                continue
 
-            img = soup.find("img")
+            posted_titles.add(title)
 
-            if img:
-                image = img.get("src")
+            if not href.startswith("http"):
+                continue
 
-            message = f"🔥 {title}\n\n📰 {href}\n\n#onepiece"
+            message = f"""
+🔥 ONE PIECE NEWS
+
+{title}
+
+📰 Leggi qui:
+{href}
+
+#onepiece #anime #luffy
+"""
 
             try:
 
-                if image:
-                    bot.send_photo(
-                        chat_id=CHAT_ID,
-                        photo=image,
-                        caption=message
-                    )
-                else:
-                    bot.send_message(
-                        chat_id=CHAT_ID,
-                        text=message
-                    )
+                bot.send_message(
+                    chat_id=CHAT_ID,
+                    text=message
+                )
 
                 print("Pubblicato:", title)
 
-                posted += 1
-
-                time.sleep(15)
-
-                if posted >= 30:
-                    break
+                # pausa lunga anti flood
+                time.sleep(random.randint(40, 70))
 
             except Exception as e:
                 print(e)
-
-        if posted >= 30:
-            break
 
     except Exception as e:
         print(e)
