@@ -10,15 +10,22 @@ from telegram import Bot
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-# Feed di Google News focalizzato su One Piece in Italia
+# Feed stabile di Google News Italia su One Piece
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+when:7d&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
-# Immagine di backup ad alta risoluzione fissa
-CANDIDATE_IMAGE = "https://images.everyeye.it/img-notizie/one-piece-remake-wit-studio-cambiera-storia-v1-4-690226.jpg"
+# LISTA DI IMMAGINI HD IMMUNI AI BLOCCHI (Ospitate su server liberi o CDN ufficiali)
+ANIME_IMAGES = [
+    "https://i.imgur.com/8QZ7Xm7.jpeg",  # Luffy Gear 5 HD
+    "https://i.imgur.com/M6LgO9b.jpeg",  # Ciurma di Cappello di Paglia Wano
+    "https://i.imgur.com/uY6qA4z.jpeg",  # Zoro e Sanji HD
+    "https://i.imgur.com/H1XU8R7.jpeg",  # One Piece Remake Wit Studio
+    "https://i.imgur.com/vH9Z3pL.jpeg",  # Luffy Egghead Arc
+    "https://i.imgur.com/Tkb3mE2.jpeg"   # I tre fratelli: Luffy, Ace, Sabo
+]
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 }
 
 def make_id(text):
@@ -30,7 +37,7 @@ def clean_for_html(text):
 
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
-        print("Errore: Credenziali BOT_TOKEN o CHAT_ID mancanti.")
+        print("Errore: Credenziali BOT_TOKEN o CHAT_ID assenti.")
         return
 
     bot = Bot(token=BOT_TOKEN)
@@ -40,22 +47,23 @@ async def main():
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
             posted_ids = set(line.strip() for line in f)
 
-    print("--- LETTURA NOTIZIE DA GOOGLE NEWS ---")
+    print("--- RECUPERO NOTIZIE IN CORSO ---")
     try:
         response = requests.get(RSS_FEED, headers=HEADERS, timeout=15)
         feed = feedparser.parse(response.text)
     except Exception as e:
-        print(f"Errore di connessione al feed: {e}")
+        print(f"Errore connessione feed: {e}")
         return
 
     if not feed.entries:
-        print("Nessuna notizia recente trovata.")
+        print("Nessuna notizia trovata.")
         return
 
     total_uploaded = 0
-    print(f"Trovati {len(feed.entries)} potenziali articoli. Inizio pubblicazione...")
+    img_index = 0
+    print(f"Trovati {len(feed.entries)} articoli. Elaborazione...")
 
-    # Limitiamo a 15 elementi per evitare blocchi temporanei da Telegram
+    # Carica fino a 15 post per riempire velocemente il canale
     for entry in feed.entries[:15]:
         title = entry.get("title", "")
         link = entry.get("link", "")
@@ -68,11 +76,11 @@ async def main():
         if uid in posted_ids:
             continue
 
-        # Pulizia del titolo dalla firma della testata alla fine (es: " - Wired")
+        # Pulizia estetica del titolo eliminando il nome del sito alla fine
         clean_title = re.sub(r'\s+-\s+[^ ]+$', '', title).strip()
         safe_title = clean_for_html(clean_title)
 
-        # Costruzione del messaggio in HTML standard pulito
+        # Genera il testo del messaggio
         message = (
             f"🔥 <b>{safe_title}</b>\n\n"
             f"📰 Fonte: {clean_for_html(source)}\n\n"
@@ -80,27 +88,32 @@ async def main():
             f"#onepiece #anime #manga #news"
         )
 
+        # Seleziona l'immagine dalla galleria a rotazione
+        selected_photo = ANIME_IMAGES[img_index % len(ANIME_IMAGES)]
+
         try:
-            # Inviamo l'immagine di copertina fissa per dare un aspetto grafico coerente a tutti i post
+            # Invio della foto a tutto schermo
             await bot.send_photo(
                 chat_id=CHAT_ID,
-                photo=CANDIDATE_IMAGE,
+                photo=selected_photo,
                 caption=message,
                 parse_mode="HTML"
             )
-            print(f" -> [OK] Post inviato: {clean_title[:30]}...")
+            print(f" -> [OK] Inviato con successo: {clean_title[:35]}...")
             
+            # Aggiorna lo storico e l'indice dell'immagine
             with open(HISTORY_FILE, "a", encoding="utf-8") as f:
                 f.write(f"{uid}\n")
             posted_ids.add(uid)
             
             total_uploaded += 1
-            await asyncio.sleep(5)  # Rispetto dei limiti anti-flood di Telegram
+            img_index += 1
+            await asyncio.sleep(5)  # Pausa di sicurezza anti-ban
             
         except Exception as e:
-            print(f" -> Errore d'invio su Telegram: {e}")
+            print(f" -> Errore durante l'invio: {e}")
 
-    print(f"\nProcedura completata. Nuovi post inviati: {total_uploaded}")
+    print(f"\n[FINE] Operazione completata. Inviati: {total_uploaded} post con immagini HD.")
 
 if __name__ == "__main__":
     asyncio.run(main())
