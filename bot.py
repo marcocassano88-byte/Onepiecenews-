@@ -4,9 +4,6 @@ import hashlib
 import feedparser
 import requests
 from telegram import Bot
-import io
-import re
-from PIL import Image, ImageDraw
 
 # Configurazione credenziali
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -15,65 +12,76 @@ CHAT_ID = os.getenv("CHAT_ID")
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
+# Galleria con immagini REALI e STABILI (Ospitate su server sicuri)
+GALLERY = {
+    "netflix": "https://images.justwatch.com/poster/306734135/s592/the-one-piece.jpg", 
+    "live_action": "https://images.justwatch.com/poster/306548545/s592/one-piece-2023.jpg", 
+    "milano": "https://m.media-amazon.com/images/I/719FvU9WunL._AC_UF894,1000_QL80_.jpg", 
+    "generiche": "https://m.media-amazon.com/images/M/MV5BODcwNWE3OTItMDc3MS00NDFmLWE1OTAtNDU3MTEyNzg5ZmQ4XkEyXkFqcGdeQXVyNTAyODkwOQ@@._V1_.jpg" 
+}
+
+LUFFY_IMG = "https://m.media-amazon.com/images/I/719FvU9WunL._AC_UF894,1000_QL80_.jpg"
+ZORO_IMG = "https://m.media-amazon.com/images/I/71MepNqCHYL._AC_UF894,1000_QL80_.jpg"
+SANJI_IMG = "https://m.media-amazon.com/images/I/71v1R8qL7mL._AC_UF894,1000_QL80_.jpg"
+
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept-Language": "it-IT,it;q=0.9,en-US;q=0.8,en;q=0.7"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 
 def make_id(text):
     return hashlib.md5(text.encode('utf-8', errors='ignore')).hexdigest()
 
-def create_anime_banner(theme):
-    """Genera una copertina geometrica a contrasto senza l'uso di font."""
-    # Sfondo scuro principale (1024x576)
-    img = Image.new("RGB", (1024, 576), color="#1A1A24")
-    d = ImageDraw.Draw(img)
-    
-    # Colori del tema
-    primary = theme["primary"]
-    accent = theme["accent"]
-    
-    # Pannello laterale colorato dinamico (Stile interfaccia anime)
-    d.rectangle([(0, 0), (300, 576)], fill=primary)
-    
-    # Linee geometriche di accento
-    d.rectangle([(280, 0), (300, 576)], fill=accent)
-    d.polygon([(300, 0), (450, 0), (300, 576)], fill=primary)
-    d.polygon([(300, 576), (450, 576), (300, 0)], fill=accent)
-    
-    # Cornice interna elegante per il testo
-    d.rectangle([(40, 40), (984, 536)], outline="#FFFFFF", width=3)
-    
-    # Salva in memoria RAM
-    img_byte_arr = io.BytesIO()
-    img.save(img_byte_arr, format='JPEG', quality=95)
-    img_byte_arr.seek(0)
-    return img_byte_arr
-
-def get_theme_by_title(title):
+def generate_dynamic_hashtags(title):
+    """Analizza il titolo e genera hashtag specifici e coerenti con la notizia."""
     t = title.lower()
-    # Mappatura dei colori basata sui personaggi/temi di One Piece
-    if "netflix" in t or "remake" in t or "wit" in t:
-        return {"primary": "#E50914", "accent": "#FFFFFF"}  # Rosso Netflix
-    elif "milano" in t or "store" in t or "pop-up" in t:
-        return {"primary": "#E67E22", "accent": "#F1C40F"}  # Arancio/Oro Milano
-    elif "luffy" in t or "rufy" in t or "gear" in t:
-        return {"primary": "#8E44AD", "accent": "#6C5CE7"}  # Viola Gear 5 / Nika
-    elif "zoro" in t:
-        return {"primary": "#16A085", "accent": "#2ECC71"}  # Verde Zoro
-    elif "sanji" in t:
-        return {"primary": "#2980B9", "accent": "#3498DB"}  # Blu Sanji
+    # Hashtag di base che devono esserci sempre
+    tags = ["#onepiece", "#anime"]
     
-    return {"primary": "#2C3E50", "accent": "#BDC3C7"}  # Grigio pirata di default
+    # Controlli dinamici basati sulle parole chiave nel titolo
+    if "manga" in t: tags.append("#manga")
+    if "netflix" in t: tags.append("#netflix")
+    if "remake" in t or "wit" in t: tags.extend(["#theonepiece", "#remake"])
+    if "live" in t or "action" in t or "attori" in t or "cast" in t: tags.append("#liveaction")
+    if "milano" in t or "store" in t or "pop-up" in t: tags.extend(["#onepiecemilano", "#milano"])
+    if "luffy" in t or "rufy" in t: tags.append("#luffy")
+    if "gear 5" in t or "gear fifth" in t or "nika" in t: tags.extend(["#gear5", "#nika"])
+    if "zoro" in t: tags.append("#zoro")
+    if "sanji" in t: tags.append("#sanji")
+    if "oda" in t or "eiichiro" in t: tags.append("#eiichirooda")
+    if "crunchyroll" in t: tags.append("#crunchyroll")
+    if "spoiler" in t or "capitolo" in t: tags.append("#opspoiler")
+    
+    # Se per qualche motivo l'articolo non rientra in nessuna categoria, aggiunge #manga di sicurezza
+    if len(tags) < 3 and "#manga" not in tags:
+        tags.append("#manga")
+        
+    # Restituisce i primi 5 hashtag uniti da uno spazio
+    return " ".join(tags[:5])
+
+def select_best_image(title):
+    t = title.lower()
+    if "netflix" in t or "remake" in t or "wit" in t:
+        return GALLERY["netflix"]
+    elif "live" in t or "action" in t or "attori" in t:
+        return GALLERY["live_action"]
+    elif "milano" in t or "store" in t or "pop-up" in t:
+        return GALLERY["milano"]
+    elif "zoro" in t:
+        return ZORO_IMG
+    elif "sanji" in t:
+        return SANJI_IMG
+    elif "luffy" in t or "rufy" in t or "gear" in t:
+        return LUFFY_IMG
+    return GALLERY["generiche"]
 
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
-        print("Errore: Credenziali mancanti!")
+        print("Errore: Credenziali mancanti.")
         return
 
     bot = Bot(token=BOT_TOKEN)
     
-    # Svuota lo storico per questo run specifico, così invia subito i post aggiornati
+    # Svuota lo storico locale per questo run così vedi subito l'effetto dei nuovi hashtag
     if os.path.exists(HISTORY_FILE):
         try: os.remove(HISTORY_FILE)
         except: pass
@@ -82,7 +90,7 @@ async def main():
         response = requests.get(RSS_FEED, headers=HEADERS, timeout=15)
         feed = feedparser.parse(response.text)
     except Exception as e:
-        print(f"Errore caricamento feed: {e}")
+        print(f"Errore feed: {e}")
         return
 
     print(f"Articoli trovati: {len(feed.entries)}")
@@ -92,19 +100,21 @@ async def main():
         title = entry.get("title", "Nuova notizia One Piece")
         link = entry.get("link", "https://news.google.com")
         
-        print(f"Elaborazione post {i+1}: {title}")
+        print(f"Elaborazione: {title}")
+        img_url = select_best_image(title)
         
-        # Genera il banner geometrico personalizzato (No Font = Zero errori)
-        theme = get_theme_by_title(title)
-        image_stream = create_anime_banner(theme)
-        image_stream.name = "one_piece_news.jpg"
+        # Generiamo gli hashtag intelligenti per questa specifica notizia
+        custom_hashtags = generate_dynamic_hashtags(title)
 
-        # Il titolo viene formattato in grassetto direttamente nella didascalia di Telegram
-        message = f"🔥 *{title}*\n\n👉 *Leggi la notizia completa qui:* {link}\n\n#onepiece #anime #manga"
+        message = f"🔥 *{title}*\n\n👉 *Leggi la notizia completa qui:* {link}\n\n{custom_hashtags}"
         
         try:
-            await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message, parse_mode="Markdown")
-            print(" -> Inviato!")
+            await bot.send_photo(chat_id=CHAT_ID, photo=img_url, caption=message, parse_mode="Markdown")
+            print(" -> Post inviato con successo!")
+            
+            with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+                f.write(f"{make_id(title)}\n")
+                
             new_posts_counter += 1
             await asyncio.sleep(4)
         except Exception as e:
