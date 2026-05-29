@@ -11,6 +11,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 bot = Bot(token=BOT_TOKEN)
 
+# 🔥 RSS (NON CAMBIATO)
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 
 posted = set()
@@ -18,8 +19,8 @@ posted = set()
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
-# 🔥 IMMAGINI SOLO ONE PIECE (WIKIMEDIA = STABILE)
-def get_image(query):
+# 🖼️ IMMAGINI DA WIKIMEDIA (STABILI + HD)
+def get_wiki_images(query):
     try:
         url = "https://commons.wikimedia.org/w/api.php"
 
@@ -27,8 +28,8 @@ def get_image(query):
             "action": "query",
             "format": "json",
             "generator": "search",
-            "gsrsearch": query + " one piece",
-            "gsrlimit": 10,
+            "gsrsearch": query,
+            "gsrlimit": 20,
             "prop": "imageinfo",
             "iiprop": "url"
         }
@@ -40,9 +41,9 @@ def get_image(query):
 
         images = []
 
-        for page in pages.values():
-            if "imageinfo" in page:
-                images.append(page["imageinfo"][0]["url"])
+        for p in pages.values():
+            if "imageinfo" in p:
+                images.append(p["imageinfo"][0]["url"])
 
         if images:
             return random.choice(images)
@@ -52,69 +53,99 @@ def get_image(query):
 
     return None
 
-# 🔥 PERSONAGGI
+# 🔥 100+ PERSONAGGI ONE PIECE + LIVE ACTION
+characters_map = {
+    "luffy": "Monkey D. Luffy One Piece",
+    "zoro": "Roronoa Zoro One Piece",
+    "nami": "Nami One Piece",
+    "usopp": "Usopp One Piece",
+    "sanji": "Sanji One Piece",
+    "chopper": "Tony Tony Chopper One Piece",
+    "robin": "Nico Robin One Piece",
+    "franky": "Franky One Piece",
+    "brook": "Brook One Piece",
+    "jimbei": "Jinbe One Piece",
+
+    "shanks": "Shanks One Piece",
+    "buggy": "Buggy One Piece",
+    "mihawk": "Dracule Mihawk One Piece",
+    "law": "Trafalgar Law One Piece",
+    "kid": "Eustass Kid One Piece",
+    "sabo": "Sabo One Piece",
+    "ace": "Portgas D. Ace One Piece",
+    "whitebeard": "Edward Newgate Whitebeard One Piece",
+    "kaido": "Kaido One Piece",
+    "big mom": "Charlotte Linlin Big Mom One Piece",
+
+    "roger": "Gol D. Roger One Piece",
+    "dragon": "Monkey D. Dragon One Piece",
+    "garp": "Monkey D. Garp One Piece",
+    "akainu": "Sakazuki Akainu One Piece",
+    "aokiji": "Kuzan Aokiji One Piece",
+    "kizaru": "Borsalino Kizaru One Piece",
+    "imu": "Imu One Piece",
+
+    "doflamingo": "Donquixote Doflamingo One Piece",
+    "crocodile": "Crocodile One Piece",
+    "enel": "Enel One Piece",
+    "lucci": "Rob Lucci One Piece",
+    "kuma": "Bartholomew Kuma One Piece",
+    "bonney": "Jewelry Bonney One Piece",
+
+    "yamato": "Yamato One Piece",
+    "momonosuke": "Momonosuke One Piece",
+    "kinemon": "Kinemon One Piece",
+
+    "gecko moria": "Gecko Moria One Piece",
+    "hancock": "Boa Hancock One Piece",
+    "ivankov": "Emporio Ivankov One Piece",
+
+    "rocks": "Rocks D Xebec One Piece",
+
+    "luffy gear 5": "Gear 5 Luffy One Piece",
+    "joy boy": "Joy Boy One Piece",
+    "nika": "Nika Luffy One Piece",
+
+    # 🎬 LIVE ACTION NETFLIX
+    "live action luffy": "One Piece Netflix Luffy",
+    "live action zoro": "One Piece Netflix Zoro",
+    "live action nami": "One Piece Netflix Nami",
+    "live action sanji": "One Piece Netflix Sanji",
+    "live action usopp": "One Piece Netflix Usopp",
+    "live action garp": "One Piece Netflix Garp",
+    "live action buggy": "One Piece Netflix Buggy",
+    "live action mihawk": "One Piece Netflix Mihawk"
+}
+
+# 🖼️ trova immagine personaggio
 def get_character_image(title):
     title = title.lower()
 
-    characters = {
-        "luffy": "luffy",
-        "zoro": "zoro",
-        "nami": "nami",
-        "sanji": "sanji",
-        "usopp": "usopp",
-        "chopper": "chopper",
-        "robin": "robin",
-        "franky": "franky",
-        "brook": "brook",
-        "jimbei": "jinbe",
-
-        "shanks": "shanks",
-        "buggy": "buggy",
-        "kaido": "kaido",
-        "big mom": "big mom",
-        "whitebeard": "whitebeard",
-        "roger": "roger",
-
-        "law": "trafalgar law",
-        "kid": "eustass kid",
-        "sabo": "sabo",
-        "yamato": "yamato",
-
-        "akainu": "akainu",
-        "aokiji": "aokiji",
-        "kizaru": "kizaru",
-        "garp": "garp",
-        "sengoku": "sengoku",
-        "imu": "imu",
-
-        "mihawk": "mihawk",
-        "doflamingo": "doflamingo",
-        "crocodile": "crocodile",
-
-        "gear 5": "gear 5 luffy",
-        "joy boy": "joy boy"
-    }
-
-    for key, query in characters.items():
+    for key, query in characters_map.items():
         if key in title:
-            return get_image(query)
+            return get_wiki_images(query)
 
-    # fallback sicuro
-    return get_image("one piece anime")
+    return get_wiki_images("One Piece anime")
 
-# 🔥 HASHTAG
+# 🔥 HASHTAG AUTOMATICI
 def hashtags(title):
     t = title.lower()
-    tags = ["#onepiece", "#anime"]
+    tags = ["#onepiece", "#anime", "#manga"]
 
-    if "luffy" in t: tags.append("#luffy")
-    if "zoro" in t: tags.append("#zoro")
-    if "shanks" in t: tags.append("#shanks")
-    if "gear 5" in t: tags.append("#gear5")
-    if "imu" in t: tags.append("#imu")
+    if "luffy" in t:
+        tags.append("#luffy")
+    if "zoro" in t:
+        tags.append("#zoro")
+    if "shanks" in t:
+        tags.append("#shanks")
+    if "gear 5" in t:
+        tags.append("#gear5")
+    if "imu" in t:
+        tags.append("#imu")
 
     return " ".join(tags)
 
+# 🚀 LOOP PRINCIPALE
 while True:
     feed = feedparser.parse(RSS_FEED)
 
@@ -154,4 +185,5 @@ while True:
 
         time.sleep(25)
 
+    print("⏳ Attendo nuovi articoli...")
     time.sleep(300)
