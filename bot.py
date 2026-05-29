@@ -18,6 +18,11 @@ CACHE_DIR = "cache"
 HISTORY_FILE = "posted_urls.txt"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+# Wikimedia richiede un User-Agent identificativo per evitare blocchi 403
+HEADERS = {
+    "User-Agent": "OnePieceNewsBot/1.0 (marcocassano88@example.com) Python-Requests"
+}
+
 # Carica lo storico dei post già inviati per evitare duplicati
 posted = set()
 if os.path.exists(HISTORY_FILE):
@@ -25,12 +30,10 @@ if os.path.exists(HISTORY_FILE):
         posted = set(line.strip() for line in f if line.strip())
 
 def generate_failsafe_image():
-    """Genera al volo un'immagine PNG valida (riquadro arancione stile One Piece) per Telegram."""
+    """Genera al volo un'immagine PNG valida (riquadro arancione) se Wikimedia fallisce completamente."""
     img = Image.new("RGB", (800, 500), color="#F39C12")
     d = ImageDraw.Draw(img)
-    # Crea un piccolo design minimale per non mandare una foto vuota
     d.rectangle([(20, 20), (780, 480)], outline="#FFFFFF", width=5)
-    
     img_byte_arr = io.BytesIO()
     img.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
@@ -59,26 +62,35 @@ characters_map = {
 def get_wiki_image(category_name):
     try:
         url = "https://commons.wikimedia.org/w/api.php"
+        
+        # 1️⃣ Prendi la lista dei file nella categoria
         params = {
             "action": "query", "format": "json", "list": "categorymembers",
             "cmtitle": "Category:" + category_name, "cmtype": "file", "cmlimit": 50
         }
-        r = requests.get(url, params=params, timeout=10)
+        r = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        if r.status_code != 200: return None
+        
         files = r.json().get("query", {}).get("categorymembers", [])
         if not files: return None
 
+        # Scegliamo un file a caso
         random_file = random.choice(files)["title"]
+        
+        # 2️⃣ Ottieni l'URL diretto dell'immagine dell'info del file
         params2 = {
             "action": "query", "format": "json", "titles": random_file,
             "prop": "imageinfo", "iiprop": "url"
         }
-        r2 = requests.get(url, params=params2, timeout=10)
+        r2 = requests.get(url, params=params2, headers=HEADERS, timeout=10)
+        if r2.status_code != 200: return None
+        
         pages = r2.json().get("query", {}).get("pages", {})
         for p in pages.values():
             if "imageinfo" in p:
                 return p["imageinfo"][0]["url"]
-    except:
-        pass
+    except Exception as e:
+        print(f"Errore API Wikimedia per {category_name}: {e}")
     return None
 
 def get_character_image(title):
@@ -87,23 +99,30 @@ def get_character_image(title):
         if key in t:
             cache_path = os.path.join(CACHE_DIR, f"{key}.jpg")
             if os.path.exists(cache_path): return cache_path
+            
             img_url = get_wiki_image(category)
             if img_url:
                 try:
-                    img_data = requests.get(img_url, timeout=10).content
+                    # Scarica l'immagine reale usando gli HEADERS corretti
+                    img_data = requests.get(img_url, headers=HEADERS, timeout=10).content
                     with open(cache_path, "wb") as f: f.write(img_data)
                     return cache_path
-                except: pass
+                except Exception as e:
+                    print(f"Errore download immagine {key}: {e}")
 
+    # Fallback su categoria generale "One Piece" se nessun personaggio specifico corrisponde
     cache_path = os.path.join(CACHE_DIR, "default.jpg")
     if os.path.exists(cache_path): return cache_path
+    
     img_url = get_wiki_image("One Piece")
     if img_url:
         try:
-            img_data = requests.get(img_url, timeout=10).content
+            img_data = requests.get(img_url, headers=HEADERS, timeout=10).content
             with open(cache_path, "wb") as f: f.write(img_data)
             return cache_path
-        except: pass
+        except Exception as e:
+            print(f"Errore download immagine default: {e}")
+            
     return None
 
 def hashtags(title):
@@ -138,7 +157,7 @@ async def main():
 
         try:
             if image_path and os.path.exists(image_path):
-                print(f"Utilizzo immagine scaricata: {image_path}")
+                print(f"Utilizzo immagine scaricata reale: {image_path}")
                 with open(image_path, "rb") as photo_file:
                     await bot.send_photo(chat_id=CHAT_ID, photo=photo_file, caption=message)
             else:
