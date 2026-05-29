@@ -18,7 +18,7 @@ posted = set()
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
-# 🔥 prende immagine dal link dell'articolo
+# 🔥 immagine dal link
 def get_image_from_page(url):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -26,12 +26,10 @@ def get_image_from_page(url):
 
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # prova og:image (metodo principale)
         img = soup.find("meta", property="og:image")
         if img and img.get("content"):
             return img["content"]
 
-        # fallback (alcuni siti usano twitter:image)
         img = soup.find("meta", property="twitter:image")
         if img and img.get("content"):
             return img["content"]
@@ -40,6 +38,27 @@ def get_image_from_page(url):
         pass
 
     return None
+
+# 🔥 generatore hashtag automatico
+def generate_hashtags(title):
+    title = title.lower()
+
+    hashtags = ["#onepiece", "#anime", "#manga"]
+
+    if "luffy" in title:
+        hashtags.append("#luffy")
+    if "zoro" in title:
+        hashtags.append("#zoro")
+    if "shanks" in title:
+        hashtags.append("#shanks")
+    if "gear 5" in title or "gear5" in title:
+        hashtags.append("#gear5")
+    if "imu" in title:
+        hashtags.append("#imu")
+    if "wano" in title:
+        hashtags.append("#wano")
+
+    return " ".join(hashtags)
 
 while True:
     feed = feedparser.parse(RSS_FEED)
@@ -57,11 +76,16 @@ while True:
 
         image = get_image_from_page(link)
 
-        # fallback sicuro se non trova immagine
         if not image:
             image = "https://i.imgur.com/8Km9tLL.jpg"
 
-        message = f"🔥 {title}\n\n👉 Fonte: {link}"
+        hashtags = generate_hashtags(title)
+
+        message = f"""🔥 {title}
+
+👉 Fonte: {link}
+
+{hashtags}"""
 
         try:
             bot.send_photo(
