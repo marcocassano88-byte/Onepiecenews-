@@ -11,7 +11,6 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 bot = Bot(token=BOT_TOKEN)
 
-# 🔥 RSS RESTA IDENTICO (come volevi)
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 
 posted = set()
@@ -19,116 +18,100 @@ posted = set()
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
-# 🔥 ricerca immagini online
-def search_image(query):
+# 🔥 IMMAGINI SOLO ONE PIECE (WIKIMEDIA = STABILE)
+def get_image(query):
     try:
-        url = f"https://duckduckgo.com/?q={query}&iax=images&ia=images"
-        headers = {"User-Agent": "Mozilla/5.0"}
+        url = "https://commons.wikimedia.org/w/api.php"
 
-        r = requests.get(url, headers=headers, timeout=10)
+        params = {
+            "action": "query",
+            "format": "json",
+            "generator": "search",
+            "gsrsearch": query + " one piece",
+            "gsrlimit": 10,
+            "prop": "imageinfo",
+            "iiprop": "url"
+        }
 
-        import re
-        imgs = re.findall(r'"image":"(.*?)"', r.text)
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
 
-        if imgs:
-            return random.choice(imgs)
+        pages = data.get("query", {}).get("pages", {})
+
+        images = []
+
+        for page in pages.values():
+            if "imageinfo" in page:
+                images.append(page["imageinfo"][0]["url"])
+
+        if images:
+            return random.choice(images)
+
     except:
         pass
 
     return None
 
-# 🔥 immagini per personaggio + fallback intelligente
+# 🔥 PERSONAGGI
 def get_character_image(title):
     title = title.lower()
 
     characters = {
-        "luffy": "luffy one piece",
-        "zoro": "zoro one piece",
-        "nami": "nami one piece",
-        "usopp": "usopp one piece",
-        "sanji": "sanji one piece",
-        "chopper": "chopper one piece",
-        "robin": "nico robin one piece",
-        "franky": "franky one piece",
-        "brook": "brook one piece",
-        "jimbei": "jinbe one piece",
+        "luffy": "luffy",
+        "zoro": "zoro",
+        "nami": "nami",
+        "sanji": "sanji",
+        "usopp": "usopp",
+        "chopper": "chopper",
+        "robin": "robin",
+        "franky": "franky",
+        "brook": "brook",
+        "jimbei": "jinbe",
 
-        "law": "trafalgar law one piece",
-        "kid": "eustass kid one piece",
-        "sabo": "sabo one piece",
-        "yamato": "yamato one piece",
+        "shanks": "shanks",
+        "buggy": "buggy",
+        "kaido": "kaido",
+        "big mom": "big mom",
+        "whitebeard": "whitebeard",
+        "roger": "roger",
 
-        "shanks": "shanks one piece",
-        "buggy": "buggy one piece",
-        "blackbeard": "blackbeard one piece",
-        "teach": "blackbeard one piece",
-        "whitebeard": "whitebeard one piece",
-        "kaido": "kaido one piece",
-        "big mom": "big mom one piece",
-        "roger": "gol d roger one piece",
+        "law": "trafalgar law",
+        "kid": "eustass kid",
+        "sabo": "sabo",
+        "yamato": "yamato",
 
-        "akainu": "akainu one piece",
-        "aokiji": "aokiji one piece",
-        "kizaru": "kizaru one piece",
-        "garp": "garp one piece",
-        "sengoku": "sengoku one piece",
-        "imu": "imu one piece",
+        "akainu": "akainu",
+        "aokiji": "aokiji",
+        "kizaru": "kizaru",
+        "garp": "garp",
+        "sengoku": "sengoku",
+        "imu": "imu",
 
-        "dragon": "dragon one piece",
-        "mihawk": "mihawk one piece",
-        "crocodile": "crocodile one piece",
-        "doflamingo": "doflamingo one piece",
-        "hancock": "boa hancock one piece",
+        "mihawk": "mihawk",
+        "doflamingo": "doflamingo",
+        "crocodile": "crocodile",
 
-        "gear 5": "gear 5 luffy one piece",
-        "joy boy": "joy boy one piece",
-        "nika": "nika luffy one piece",
-
-        # LIVE ACTION NETFLIX
-        "live action luffy": "one piece netflix luffy",
-        "live action zoro": "one piece netflix zoro",
-        "live action nami": "one piece netflix nami",
-        "live action sanji": "one piece netflix sanji",
-        "live action usopp": "one piece netflix usopp",
-        "live action garp": "one piece netflix garp",
-        "live action buggy": "one piece netflix buggy",
-        "live action mihawk": "one piece netflix mihawk"
+        "gear 5": "gear 5 luffy",
+        "joy boy": "joy boy"
     }
 
     for key, query in characters.items():
         if key in title:
-            return search_image(query)
+            return get_image(query)
 
-    # 🎲 fallback random controllato
-    fallback = [
-        "one piece luffy",
-        "one piece zoro",
-        "one piece shanks",
-        "one piece gear 5",
-        "one piece anime",
-        "one piece manga"
-    ]
+    # fallback sicuro
+    return get_image("one piece anime")
 
-    return search_image(random.choice(fallback))
+# 🔥 HASHTAG
+def hashtags(title):
+    t = title.lower()
+    tags = ["#onepiece", "#anime"]
 
-# 🔥 HASHTAG AUTOMATICI
-def generate_hashtags(title):
-    title = title.lower()
-
-    tags = ["#onepiece", "#anime", "#manga"]
-
-    if "luffy" in title:
-        tags.append("#luffy")
-    if "zoro" in title:
-        tags.append("#zoro")
-    if "shanks" in title:
-        tags.append("#shanks")
-    if "gear 5" in title:
-        tags.append("#gear5")
-    if "imu" in title:
-        tags.append("#imu")
-    if "wano" in title:
-        tags.append("#wano")
+    if "luffy" in t: tags.append("#luffy")
+    if "zoro" in t: tags.append("#zoro")
+    if "shanks" in t: tags.append("#shanks")
+    if "gear 5" in t: tags.append("#gear5")
+    if "imu" in t: tags.append("#imu")
 
     return " ".join(tags)
 
@@ -151,13 +134,11 @@ while True:
         if not image:
             image = "https://i.imgur.com/8Km9tLL.jpg"
 
-        hashtags = generate_hashtags(title)
-
         message = f"""🔥 {title}
 
 👉 Fonte: {link}
 
-{hashtags}"""
+{hashtags(title)}"""
 
         try:
             bot.send_photo(
@@ -173,5 +154,4 @@ while True:
 
         time.sleep(25)
 
-    print("⏳ Attendo nuovi articoli...")
     time.sleep(300)
