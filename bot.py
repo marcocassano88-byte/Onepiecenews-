@@ -15,7 +15,6 @@ CHAT_ID = os.getenv("CHAT_ID")
 RSS_FEED = "https://news.google.com/rss/search?q=One+Piece+anime&hl=it&gl=IT&ceid=IT:it"
 HISTORY_FILE = "posted_urls.txt"
 
-# User-Agent reale per evitare che i siti di news blocchino il bot
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
@@ -28,51 +27,62 @@ if os.path.exists(HISTORY_FILE):
 def make_id(text):
     return hashlib.md5(text.encode()).hexdigest()
 
-def get_real_article_image(google_rss_link):
-    """Trova l'immagine reale dell'articolo seguendo il reindirizzamento di Google News."""
+def clean_title_for_search(title):
+    """Rimuove il nome della testata giornalistica alla fine del titolo per ottimizzare la ricerca immagini."""
+    cleaned = re.sub(r'\s*-\s*[^-\n]+$', '', title)
+    return cleaned.strip()
+
+def get_image_from_search(title):
+    """Cerca un'immagine pertinente in tempo reale usando il motore di ricerca DuckDuckGo."""
     try:
-        # 1. Segui il link di Google News per trovare il sito reale
-        res = requests.get(google_rss_link, headers=HEADERS, timeout=5)
-        real_url = res.url
+        search_term = clean_title_for_search(title)
+        print(f"Cerco immagine per: '{search_term}'")
         
-        # 2. Scarica la pagina reale
-        page_res = requests.get(real_url, headers=HEADERS, timeout=5)
-        html = page_res.text
+        # Query di ricerca su DuckDuckGo Immagini
+        url = "https://duckduckgo.com/iu/"
+        params = {
+            "q": search_term,
+            "f": "1",
+            "p": "1"
+        }
         
-        # 3. Cerca il tag Open Graph (og:image) usato da tutti i giornali per i social
-        image_match = re.search(r'<meta[^>]*property=["\']og:image["\'][^>]*content=["\']([^"\']+)["\']', html)
-        if not image_match:
-            image_match = re.search(r'<meta[^>]*content=["\']([^"\']+)["\'][^>]*property=["\']og:image["\']', html)
+        response = requests.get(url, params=params, headers=HEADERS, timeout=10)
+        if response.status_code == 200:
+            # Estrae i link delle immagini dai risultati della ricerca
+            image_urls = re.findall(r'image_url["\']:\s*["\'](http[s]?://[^"\']+)["\']', response.text)
             
-        if image_match:
-            img_url = image_match.group(1)
-            # Scarica l'immagine reale della notizia
-            img_data = requests.get(img_url, headers=HEADERS, timeout=5).content
+            # Filtra ed evita loghi di Google News o immagini palesemente errate
+            valid_urls = [u for u in image_urls if "lh3.googleusercontent" not in u and "google" not in u.lower()]
             
-            # Verifica che sia un'immagine valida prima di restituirla
-            img = Image.open(io.BytesIO(img_data))
-            img.verify()
-            
-            img_stream = io.BytesIO(img_data)
-            img_stream.seek(0)
-            return img_stream
-    except:
-        pass
+            # Tenta di scaricare una delle prime 3 immagini trovate
+            for img_url in valid_urls[:3]:
+                try:
+                    img_res = requests.get(img_url, headers=HEADERS, timeout=7)
+                    if img_res.status_code == 200:
+                        # Verifica che sia un file immagine valido e non corrotto
+                        img = Image.open(io.BytesIO(img_res.content))
+                        img.verify()
+                        
+                        img_stream = io.BytesIO(img_res.content)
+                        img_stream.seek(0)
+                        return img_stream
+                except:
+                    continue
+    except Exception as e:
+        print(f"Errore durante la ricerca immagine: {e}")
     return None
 
 def generate_news_card(title):
-    """Crea un'immagine personalizzata con il titolo se non viene trovata un'immagine reale."""
+    """Crea una copertina stilizzata se la ricerca immagini non restituisce risultati."""
     img = Image.new("RGB", (800, 450), color="#1a1a1a")
     d = ImageDraw.Draw(img)
     
-    # Decorazione estetica bordi (Stile One Piece scuro/arancio)
+    # Bordi stilizzati arancione/rosso
     d.rectangle([(15, 15), (785, 435)], outline="#E74C3C", width=4)
     d.rectangle([(25, 25), (775, 425)], outline="#F39C12", width=2)
     
-    # Tag del canale in alto
     d.text((40, 40), "ONE PIECE ITALIA NEWS", fill="#F39C12")
     
-    # Spezza il titolo per farlo stare nell'immagine senza font esterni
     words = title.split()
     lines = []
     current_line = []
@@ -84,7 +94,6 @@ def generate_news_card(title):
             current_line.append(word)
     lines.append(" ".join(current_line))
     
-    # Scrivi il testo riga per riga
     y_text = 150
     for line in lines[:5]:
         d.text((50, y_text), line, fill="#FFFFFF")
@@ -106,7 +115,7 @@ def hashtags(title):
 
 async def main():
     if not BOT_TOKEN or not CHAT_ID:
-        print("Errore: Credenziali mancanti.")
+        print("Errore: Credenziali mancanti nelle variabili d'ambiente.")
         return
 
     bot = Bot(token=BOT_TOKEN)
@@ -118,26 +127,23 @@ async def main():
         link = entry.link
         uid = make_id(title)
 
-        # ⚠️ MODIFICA DI TEST: Commentato temporaneamente per forzare l'invio dei post vecchi
-        # if uid in posted:
-        #     continue
+        if uid in posted:
+            continue
 
-        print(f"Elaborazione: {title}")
+        print(f"Elaborazione notizia: {title}")
         
-        # Prova a prendere l'immagine vera del giornale
-        image_stream = get_real_article_image(link)
-        is_failsafe = False
+        # Cerca l'immagine tramite motore di ricerca dinamico
+        image_stream = get_image_from_search(title)
         
-        # Se fallisce, genera la copertina grafica con il titolo scritto sopra
+        # Fallback se non trova nulla sul web
         if not image_stream:
-            print(f"Immagine nativa non trovata. Genero copertina grafica.")
+            print("Nessuna immagine trovata sul web. Genero copertina grafica di riserva.")
             image_stream = generate_news_card(title)
-            is_failsafe = True
 
         message = f"🔥 {title}\n\n👉 Fonte: {link}\n\n{hashtags(title)}"
 
         try:
-            image_stream.name = "news_image.jpg" if not is_failsafe else "news_card.jpg"
+            image_stream.name = "news_image.jpg"
             await bot.send_photo(chat_id=CHAT_ID, photo=image_stream, caption=message)
             print(f"Pubblicato con successo: {title}")
             
@@ -149,10 +155,9 @@ async def main():
             await asyncio.sleep(5)
 
         except Exception as e:
-            print(f"Errore invio: {e}")
+            print(f"Errore durante l'invio su Telegram: {e}")
 
     print(f"Fine sessione. Nuovi post pubblicati: {new_posts_counter}")
 
 if __name__ == "__main__":
     asyncio.run(main())
-    
