@@ -1,12 +1,11 @@
+import os
 from telegram import Bot
 
-BOT_TOKEN = "INSERISCI_TOKEN"
-CHAT_ID = "@nomecanale"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+
+print("TOKEN DEBUG:", BOT_TOKEN)  # SOLO TEST TEMPORANEO
 
 bot = Bot(token=BOT_TOKEN)
 
-try:
-    bot.send_message(chat_id=CHAT_ID, text="TEST BOT OK ✅")
-    print("FUNZIONA")
-except Exception as e:
-    print("ERRORE:", e)
+bot.send_message(chat_id=CHAT_ID, text="TEST BOT OK ✅")
